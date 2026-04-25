@@ -84,9 +84,7 @@ def init_db():
     except Exception:
         pass
     db.close()
-    init_db()
-
-
+init_db()
 # ── Auth ──────────────────────────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
