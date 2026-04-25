@@ -21,6 +21,13 @@ def get_db():
     return conn
 
 def init_db():
+    # Reset DB if RESET_DB env var is set
+    if os.environ.get('RESET_DB') == 'true':
+        try:
+            os.remove(DB_PATH)
+        except Exception:
+            pass
+
     db = get_db()
     db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
