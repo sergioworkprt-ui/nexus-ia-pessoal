@@ -279,34 +279,85 @@ def web_search(query):
         results.append(f"• {r.get('title','')}: {r.get('snippet','')} ({r.get('link','')})")
     return "\n".join(results) if results else None
 
-def get_youtube_transcript(url_or_id):
-    """Extrai transcrição de vídeo YouTube via API pública."""
+def extract_video_id(url_or_id):
+    """Extrai o ID de 11 caracteres de um URL YouTube."""
     import re
-    vid_match = re.search(r'(?:v=|youtu\.be/|embed/)([\w-]{11})', url_or_id)
-    video_id = vid_match.group(1) if vid_match else url_or_id.strip()
-    if len(video_id) != 11:
-        return None, "ID de vídeo inválido"
-    try:
-        # Tenta via timedtext API pública do YouTube
-        langs = ['pt', 'pt-PT', 'pt-BR', 'en']
-        for lang in langs:
+    patterns = [
+        r'(?:v=)([\w-]{11})',
+        r'(?:youtu\.be/)([\w-]{11})',
+        r'(?:embed/)([\w-]{11})',
+        r'(?:shorts/)([\w-]{11})',
+    ]
+    for p in patterns:
+        m = re.search(p, url_or_id)
+        if m:
+            return m.group(1)
+    if len(url_or_id.strip()) == 11:
+        return url_or_id.strip()
+    return None
+
+def get_youtube_transcript(url_or_id):
+    """Extrai transcrição de vídeo YouTube — múltiplos métodos."""
+    import re
+    video_id = extract_video_id(url_or_id)
+    if not video_id:
+        return None, f"Não consegui extrair ID do URL: {url_or_id[:80]}"
+    
+    # Método 1: timedtext API com vários formatos
+    langs = ['pt', 'pt-PT', 'pt-BR', 'en', 'en-US', 'en-GB']
+    for lang in langs:
+        for fmt in ['json3', 'srv3', 'vtt']:
+            try:
+                api_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={lang}&fmt={fmt}&kind=asr"
+                req = urllib.request.Request(api_url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8'
+                })
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    raw = resp.read().decode('utf-8')
+                    if not raw or raw == '{}' or len(raw) < 20:
+                        continue
+                    if fmt == 'json3':
+                        data = json.loads(raw)
+                        events = data.get('events', [])
+                        text = ' '.join(
+                            seg.get('utf8', '')
+                            for e in events
+                            for seg in e.get('segs', [])
+                            if seg.get('utf8', '').strip()
+                        ).strip()
+                    else:
+                        # Remove tags VTT/SRV
+                        text = re.sub(r'<[^>]+>', '', raw)
+                        text = re.sub(r'\d+:\d+:\d+\.\d+ --> \d+:\d+:\d+\.\d+', '', text)
+                        text = re.sub(r'\n+', ' ', text).strip()
+                    if text and len(text) > 50:
+                        return text[:5000], None
+            except Exception:
+                continue
+    
+    # Método 2: Tentar sem 'kind=asr' (legendas manuais)
+    for lang in ['pt', 'en']:
+        try:
             api_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={lang}&fmt=json3"
             req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                events = data.get('events', [])
-                if events:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read().decode('utf-8')
+                if raw and len(raw) > 20:
+                    data = json.loads(raw)
+                    events = data.get('events', [])
                     text = ' '.join(
-                        seg.get('utf8', '') 
-                        for e in events 
+                        seg.get('utf8', '')
+                        for e in events
                         for seg in e.get('segs', [])
                         if seg.get('utf8', '').strip()
-                    )
-                    if text.strip():
-                        return text[:4000], None
-        return None, "Transcrição não disponível neste vídeo"
-    except Exception as e:
-        return None, f"Erro: {str(e)[:100]}"
+                    ).strip()
+                    if text and len(text) > 50:
+                        return text[:5000], None
+        except Exception:
+            continue
+
+    return None, f"Vídeo {video_id}: sem transcrição disponível (legendas não ativas pelo canal)"
 
 def detect_and_enrich(user_message, messages):
     """Deteta pedidos de pesquisa web ou YouTube e enriquece o contexto."""
@@ -324,15 +375,21 @@ def detect_and_enrich(user_message, messages):
     
     if is_youtube:
         import re
-        urls = re.findall(r'https?://[^\s]+', user_message)
-        for url in urls:
-            if 'youtube' in url or 'youtu.be' in url:
+        urls = re.findall(r'https?://[^\s\)\]"']+', user_message)
+        yt_urls = [u for u in urls if 'youtube' in u or 'youtu.be' in u]
+        
+        if yt_urls:
+            extra_context += f"\n\n=== ANÁLISE DE {len(yt_urls)} VÍDEO(S) YOUTUBE ===\n"
+            for i, url in enumerate(yt_urls[:6], 1):  # máx 6 vídeos
+                vid_id = extract_video_id(url)
+                extra_context += f"\n--- Vídeo {i}: {url[:60]} (ID: {vid_id}) ---\n"
                 transcript, err = get_youtube_transcript(url)
                 if transcript:
-                    extra_context += f"\n\nTRANSCRIÇÃO DO VÍDEO YOUTUBE:\n{transcript}\n"
+                    extra_context += f"TRANSCRIÇÃO ({len(transcript)} chars):\n{transcript[:2000]}\n"
                 else:
-                    extra_context += f"\n\n[Não foi possível obter transcrição: {err}]\n"
-                break
+                    extra_context += f"[Sem transcrição: {err}]\n"
+                    extra_context += f"[Analisa com base no título/URL e pesquisa web sobre o tema]\n"
+            extra_context += "\n=== FIM DOS VÍDEOS ===\n"
     elif is_search and os.environ.get('SERPER_API_KEY'):
         # Extrai query de pesquisa
         query = user_message
@@ -416,6 +473,20 @@ def chat():
         messages[-1]['content'] = messages[-1]['content'] + extra
     
     ai_response, model_used = get_ai_response(messages, user_id)
+    
+    # Auto-envio de email se utilizador pediu e Gmail configurado
+    email_triggers = ['envia email', 'manda email', 'send email', 'notifica', 
+                      'avisa-me', 'manda-me', 'envia-me', 'notify']
+    if any(t in user_message.lower() for t in email_triggers):
+        gmail = os.environ.get('GMAIL_ADDRESS', '')
+        if gmail:
+            subject = "✅ NEXUS — Análise Concluída!"
+            email_body = f"Olá Sergio!\n\nA NEXUS terminou a análise.\n\nRESPOSTA:\n{ai_response}\n\n---\nModelo: {model_used}\nNEXUS: https://nexus-ia-pessoal.onrender.com"
+            try:
+                send_email(gmail, subject, email_body)
+                ai_response += "\n\n📧 *Email enviado para " + gmail + "*"
+            except Exception as e:
+                ai_response += f"\n\n⚠️ Email não enviado: {str(e)[:100]}"
     db = get_db()
     db.execute(
         "INSERT INTO conversations (user_id, role, content, model_used) VALUES (?, 'assistant', ?, ?)",
