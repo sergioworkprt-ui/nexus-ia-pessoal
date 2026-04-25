@@ -84,7 +84,7 @@ def init_db():
     except Exception:
         pass
     db.close()
-init_db()
+
 # ── Auth ──────────────────────────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
@@ -237,6 +237,107 @@ def try_mistral(messages, memory_context):
     except Exception as e:
         return None, f"Mistral parse: {e}"
 
+
+def try_cerebras(messages, memory_context):
+    api_key = os.environ.get('CEREBRAS_API_KEY', '')
+    if not api_key:
+        return None, "CEREBRAS_API_KEY não definida"
+    url = "https://api.cerebras.ai/v1/chat/completions"
+    headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'}
+    msgs = [{'role': 'system', 'content': SYSTEM_PROMPT + memory_context}]
+    msgs += [{'role': m['role'], 'content': m['content']} for m in messages]
+    body = {'model': 'llama-3.3-70b', 'messages': msgs, 'max_tokens': 2048, 'temperature': 0.7}
+    result, err = make_request(url, headers, body)
+    if err:
+        return None, f"Cerebras: {err}"
+    try:
+        return result['choices'][0]['message']['content'], None
+    except Exception as e:
+        return None, f"Cerebras parse: {e}"
+
+def web_search(query):
+    """Pesquisa Google via Serper API."""
+    api_key = os.environ.get('SERPER_API_KEY', '')
+    if not api_key:
+        return None
+    url = "https://google.serper.dev/search"
+    headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
+    body = {'q': query, 'gl': 'pt', 'hl': 'pt', 'num': 5}
+    result, err = make_request(url, headers, body)
+    if err or not result:
+        return None
+    results = []
+    for r in result.get('organic', [])[:5]:
+        results.append(f"• {r.get('title','')}: {r.get('snippet','')} ({r.get('link','')})")
+    return "\n".join(results) if results else None
+
+def get_youtube_transcript(url_or_id):
+    """Extrai transcrição de vídeo YouTube via API pública."""
+    import re
+    vid_match = re.search(r'(?:v=|youtu\.be/|embed/)([\w-]{11})', url_or_id)
+    video_id = vid_match.group(1) if vid_match else url_or_id.strip()
+    if len(video_id) != 11:
+        return None, "ID de vídeo inválido"
+    try:
+        # Tenta via timedtext API pública do YouTube
+        langs = ['pt', 'pt-PT', 'pt-BR', 'en']
+        for lang in langs:
+            api_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={lang}&fmt=json3"
+            req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                events = data.get('events', [])
+                if events:
+                    text = ' '.join(
+                        seg.get('utf8', '') 
+                        for e in events 
+                        for seg in e.get('segs', [])
+                        if seg.get('utf8', '').strip()
+                    )
+                    if text.strip():
+                        return text[:4000], None
+        return None, "Transcrição não disponível neste vídeo"
+    except Exception as e:
+        return None, f"Erro: {str(e)[:100]}"
+
+def detect_and_enrich(user_message, messages):
+    """Deteta pedidos de pesquisa web ou YouTube e enriquece o contexto."""
+    msg_lower = user_message.lower()
+    extra_context = ""
+    
+    # Deteta pedido de pesquisa web
+    search_triggers = ['pesquisa', 'pesquisar', 'procura', 'procurar', 'busca', 'buscar', 
+                       'search', 'o que é', 'o que são', 'como funciona', 'notícias', 
+                       'preço de', 'quanto custa', 'melhor', 'top ', 'ranking']
+    is_search = any(t in msg_lower for t in search_triggers)
+    
+    # Deteta link YouTube
+    is_youtube = 'youtube.com' in msg_lower or 'youtu.be' in msg_lower
+    
+    if is_youtube:
+        import re
+        urls = re.findall(r'https?://[^\s]+', user_message)
+        for url in urls:
+            if 'youtube' in url or 'youtu.be' in url:
+                transcript, err = get_youtube_transcript(url)
+                if transcript:
+                    extra_context += f"\n\nTRANSCRIÇÃO DO VÍDEO YOUTUBE:\n{transcript}\n"
+                else:
+                    extra_context += f"\n\n[Não foi possível obter transcrição: {err}]\n"
+                break
+    elif is_search and os.environ.get('SERPER_API_KEY'):
+        # Extrai query de pesquisa
+        query = user_message
+        for prefix in ['pesquisa ', 'pesquisar ', 'procura ', 'procurar ', 'busca ', 'search ']:
+            if msg_lower.startswith(prefix):
+                query = user_message[len(prefix):]
+                break
+        results = web_search(query)
+        if results:
+            extra_context += f"\n\nRESULTADOS DA PESQUISA WEB PARA: {query}\n{results}\n"
+    
+    return extra_context
+
 def get_ai_response(messages, user_id):
     db = get_db()
     memories = db.execute(
@@ -254,6 +355,7 @@ def get_ai_response(messages, user_id):
     providers = [
         ('Gemini 1.5 Flash', try_gemini),
         ('Groq Llama 3.3 70B', try_groq),
+        ('Cerebras Llama 3.3', try_cerebras),
         ('OpenRouter', try_openrouter),
         ('Mistral', try_mistral),
     ]
@@ -299,6 +401,12 @@ def chat():
     ).fetchall()
     db.close()
     messages = [{'role': r['role'], 'content': r['content']} for r in reversed(history)]
+    
+    # Enriquece com pesquisa web ou YouTube se necessário
+    extra = detect_and_enrich(user_message, messages)
+    if extra:
+        messages[-1]['content'] = messages[-1]['content'] + extra
+    
     ai_response, model_used = get_ai_response(messages, user_id)
     db = get_db()
     db.execute(
