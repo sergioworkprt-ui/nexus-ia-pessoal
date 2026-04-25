@@ -565,6 +565,105 @@ def change_password():
     db.close()
     return jsonify({'ok': True})
 
+
+# ── Email Notifications (Gmail SMTP) ─────────────────────────────────────
+def send_email(to_email, subject, body):
+    """Envia email via Gmail SMTP."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    gmail = os.environ.get('GMAIL_ADDRESS', '')
+    app_password = os.environ.get('GMAIL_APP_PASSWORD', '')
+    
+    if not gmail or not app_password:
+        return False, "Gmail não configurado. Adiciona GMAIL_ADDRESS e GMAIL_APP_PASSWORD no Render."
+    
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = f"NEXUS IA Pessoal <{gmail}>"
+        msg['To'] = to_email
+        
+        # Texto simples
+        text_part = MIMEText(body, 'plain', 'utf-8')
+        msg.attach(text_part)
+        
+        # HTML bonito
+        html_body = f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0f;color:#e8e8f0;padding:2rem;border-radius:12px">
+            <h1 style="color:#a594ff;border-bottom:1px solid #2a2a3a;padding-bottom:1rem">⚡ NEXUS — Análise Concluída</h1>
+            <div style="background:#1a1a24;padding:1.5rem;border-radius:8px;border:1px solid #2a2a3a;white-space:pre-wrap;line-height:1.6">{body}</div>
+            <p style="margin-top:1.5rem;color:#5a5a7a;font-size:0.8rem">
+                Acede à tua NEXUS: <a href="https://nexus-ia-pessoal.onrender.com" style="color:#7c6fff">nexus-ia-pessoal.onrender.com</a>
+            </p>
+        </div>
+        """
+        html_part = MIMEText(html_body, 'html', 'utf-8')
+        msg.attach(html_part)
+        
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(gmail, app_password)
+            server.sendmail(gmail, to_email, msg.as_string())
+        
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+@app.route('/api/send-email', methods=['POST'])
+@login_required
+def send_email_endpoint():
+    data = request.json
+    to_email = data.get('to', '')
+    subject = data.get('subject', 'Mensagem da NEXUS')
+    body = data.get('body', '')
+    if not to_email or not body:
+        return jsonify({'error': 'Email e mensagem obrigatórios'}), 400
+    ok, err = send_email(to_email, subject, body)
+    if ok:
+        return jsonify({'ok': True})
+    return jsonify({'error': err}), 500
+
+@app.route('/api/notify-analysis', methods=['POST'])
+@login_required
+def notify_analysis():
+    """Faz análise longa e envia email quando terminar."""
+    data = request.json
+    user_id = session['user_id']
+    prompt = data.get('prompt', '')
+    to_email = data.get('email', '')
+    if not prompt or not to_email:
+        return jsonify({'error': 'Prompt e email obrigatórios'}), 400
+    
+    # Faz a análise
+    messages = [{'role': 'user', 'content': prompt}]
+    response, model = get_ai_response(messages, user_id)
+    
+    # Guarda na conversa
+    db = get_db()
+    db.execute("INSERT INTO conversations (user_id, role, content) VALUES (?, 'user', ?)",
+               (user_id, prompt))
+    db.execute("INSERT INTO conversations (user_id, role, content, model_used) VALUES (?, 'assistant', ?, ?)",
+               (user_id, response, model))
+    db.commit()
+    db.close()
+    
+    # Envia email
+    subject = "✅ NEXUS — Análise Concluída!"
+    email_body = f"""Olá Sergio!
+
+A tua NEXUS terminou a análise que pediste.
+
+RESPOSTA:
+{response}
+
+---
+Modelo usado: {model}
+Acede à NEXUS: https://nexus-ia-pessoal.onrender.com
+"""
+    send_email(to_email, subject, email_body)
+    return jsonify({'ok': True, 'response': response, 'model': model})
+
 # ── Emergency Reset ───────────────────────────────────────────────────────
 @app.route("/reset/<token>")
 def emergency_reset(token):
