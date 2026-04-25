@@ -182,7 +182,7 @@ def try_groq(messages, memory_context):
     headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'}
     msgs = [{'role': 'system', 'content': SYSTEM_PROMPT + memory_context}]
     msgs += [{'role': m['role'], 'content': m['content']} for m in messages]
-    body = {'model': 'llama-3.3-70b-versatile', 'messages': msgs, 'max_tokens': 2048, 'temperature': 0.7}
+    body = {'model': 'llama3-70b-8192', 'messages': msgs, 'max_tokens': 2048, 'temperature': 0.7}
     result, err = make_request(url, headers, body)
     if err:
         return None, f"Groq: {err}"
