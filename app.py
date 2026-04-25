@@ -84,7 +84,9 @@ def init_db():
     except Exception:
         pass
     db.close()
+
 init_db()
+
 # ── Auth ──────────────────────────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
@@ -154,7 +156,7 @@ def try_gemini(messages, memory_context):
     api_key = os.environ.get('GEMINI_API_KEY', '')
     if not api_key:
         return None, "GEMINI_API_KEY não definida"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     contents = []
     for msg in messages:
         role = 'user' if msg['role'] == 'user' else 'model'
