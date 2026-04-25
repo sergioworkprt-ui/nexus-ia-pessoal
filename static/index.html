@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS — IA Pessoal</title>
+<title>NEXUS – IA Pessoal</title>
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#7c6fff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NEXUS">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -391,7 +397,8 @@ body {
       <span class="nav-icon">⚙️</span><span>Config</span>
     </div>
     <div class="sidebar-bottom">
-      <div class="user-pill" onclick="doLogout()">
+      <button id="install-btn" onclick="installApp()" style="display:none;align-items:center;gap:8px;margin:0 10px 6px;padding:0.5rem 1rem;background:linear-gradient(135deg,#7c6fff,#40d8ff);border:none;border-radius:8px;color:white;font-family:Syne,sans-serif;font-size:0.78rem;font-weight:700;cursor:pointer">📱 Instalar App</button>
+<div class="user-pill" onclick="doLogout()">
         <div class="user-dot"></div>
         <span id="sidebar-user">admin</span>
       </div>
@@ -409,7 +416,12 @@ body {
         </div>
         <button class="btn-danger" onclick="clearHistory()" style="font-size:0.72rem;padding:0.4rem 0.8rem">Limpar</button>
       </div>
-      <div class="chat-quick-actions">
+      <div style="padding:0.5rem 1.5rem 0;display:flex;gap:8px">
+  <input type="text" id="web-search-input" placeholder="🔍 Pesquisar na web..." style="flex:1;padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;font-size:0.82rem;outline:none" onkeydown="if(event.key==='Enter')doWebSearch()">
+  <button onclick="doWebSearch()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">Pesquisar</button>
+  <button onclick="doYouTube()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--red);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">▶ YouTube</button>
+</div>
+<div class="chat-quick-actions">
         <button class="quick-btn" onclick="quickMsg('Quais são as melhores formas de gerar rendimento online em 2024 com pouco investimento inicial?')">💰 Ideias de rendimento</button>
         <button class="quick-btn" onclick="quickMsg('Cria um plano de ação para esta semana para começar a gerar rendimento online.')">📅 Plano semanal</button>
         <button class="quick-btn" onclick="quickMsg('Analisa o meu perfil e sugere as 3 melhores oportunidades para mim.')">🎯 Oportunidades</button>
@@ -802,6 +814,61 @@ async function changePassword() {
   if (res.ok) { showToast('Password alterada!'); $('pw-current').value = ''; $('pw-new').value = ''; }
   else showToast(res.error || 'Erro', 'error');
 }
+
+
+// ── Web Search ──
+async function doWebSearch() {
+  const q = document.getElementById('web-search-input').value.trim();
+  if (!q) return;
+  document.getElementById('web-search-input').value = '';
+  const msg = 'Pesquisa na web: ' + q;
+  document.getElementById('chat-input').value = msg;
+  sendMessage();
+}
+
+// ── YouTube Analysis ──
+async function doYouTube() {
+  const url = prompt('Cola o link do vídeo YouTube:');
+  if (!url) return;
+  document.getElementById('chat-input').value = 'Analisa este vídeo YouTube e resume o conteúdo principal: ' + url;
+  sendMessage();
+}
+
+// ── PWA Service Worker ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/sw.js')
+      .then(reg => console.log('SW registado:', reg.scope))
+      .catch(err => console.log('SW erro:', err));
+  });
+}
+
+// ── PWA Install Button ──
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('install-btn');
+  if (btn) { btn.style.display = 'flex'; }
+});
+
+async function installApp() {
+  if (!deferredPrompt) {
+    showToast('Para instalar: menu do browser → "Adicionar ao ecrã inicial"', 'success');
+    return;
+  }
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') showToast('NEXUS instalada! 🎉');
+  deferredPrompt = null;
+}
+
+window.addEventListener('appinstalled', () => {
+  showToast('NEXUS instalada com sucesso! 🎉');
+  const btn = document.getElementById('install-btn');
+  if (btn) btn.style.display = 'none';
+});
+
 </script>
 </body>
 </html>
