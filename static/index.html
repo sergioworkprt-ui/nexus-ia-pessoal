@@ -422,7 +422,8 @@ body {
   <button onclick="doYouTube()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--red);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">▶ YouTube</button>
 </div>
 <div class="chat-quick-actions">
-        <button class="quick-btn" onclick="quickMsg('Quais são as melhores formas de gerar rendimento online em 2024 com pouco investimento inicial?')">💰 Ideias de rendimento</button>
+        <button class="quick-btn" onclick="showEmailModal()" style="border-color:var(--green);color:var(--green)">📧 Analisar e notificar por email</button>
+<button class="quick-btn" onclick="quickMsg('Quais são as melhores formas de gerar rendimento online em 2024 com pouco investimento inicial?')">💰 Ideias de rendimento</button>
         <button class="quick-btn" onclick="quickMsg('Cria um plano de ação para esta semana para começar a gerar rendimento online.')">📅 Plano semanal</button>
         <button class="quick-btn" onclick="quickMsg('Analisa o meu perfil e sugere as 3 melhores oportunidades para mim.')">🎯 Oportunidades</button>
         <button class="quick-btn" onclick="quickMsg('Escreve um post para LinkedIn sobre produtividade com IA.')">✍️ Criar conteúdo</button>
@@ -816,6 +817,49 @@ async function changePassword() {
 }
 
 
+
+// ── Email Analysis ──
+function showEmailModal() {
+  const modal = document.getElementById('email-modal');
+  modal.style.display = 'flex';
+}
+
+async function submitEmailAnalysis() {
+  const email = document.getElementById('notify-email').value.trim();
+  const prompt = document.getElementById('notify-prompt').value.trim();
+  const status = document.getElementById('email-status');
+  
+  if (!email || !prompt) {
+    status.textContent = '⚠️ Preenche o email e o que queres analisar';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  
+  status.textContent = '⏳ A analisar... pode demorar 1-2 minutos...';
+  status.style.color = 'var(--amber)';
+  
+  try {
+    const res = await api('/notify-analysis', 'POST', {email, prompt});
+    if (res.ok) {
+      status.textContent = '✅ Análise concluída! Email enviado para ' + email;
+      status.style.color = 'var(--green)';
+      // Also show in chat
+      addMessage('user', prompt, true);
+      addMessage('assistant', res.response, true);
+      setTimeout(() => {
+        document.getElementById('email-modal').style.display = 'none';
+        status.textContent = '';
+      }, 3000);
+    } else {
+      status.textContent = '❌ Erro: ' + (res.error || 'Tenta novamente');
+      status.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    status.textContent = '❌ Erro de ligação';
+    status.style.color = 'var(--red)';
+  }
+}
+
 // ── Web Search ──
 async function doWebSearch() {
   const q = document.getElementById('web-search-input').value.trim();
@@ -870,5 +914,22 @@ window.addEventListener('appinstalled', () => {
 });
 
 </script>
+
+<!-- Email Analysis Modal -->
+<div id="email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:2rem;width:90%;max-width:500px">
+    <h3 style="margin-bottom:1rem;color:var(--accent2)">📧 Analisar e Notificar por Email</h3>
+    <p style="font-size:0.8rem;color:var(--text2);margin-bottom:1rem">A NEXUS faz a análise e envia-te o resultado por email quando terminar.</p>
+    <label style="font-size:0.75rem;color:var(--text3)">O TEU EMAIL</label>
+    <input type="email" id="notify-email" placeholder="sergio@gmail.com" style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none">
+    <label style="font-size:0.75rem;color:var(--text3)">O QUE QUERES ANALISAR</label>
+    <textarea id="notify-prompt" rows="5" placeholder="Ex: Analisa estes vídeos sobre investimento e cria um plano para mim:&#10;https://youtube.com/..." style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none;resize:vertical"></textarea>
+    <div style="display:flex;gap:10px">
+      <button onclick="submitEmailAnalysis()" class="btn-primary" style="flex:1;padding:0.75rem">🚀 Analisar e Enviar Email</button>
+      <button onclick="document.getElementById('email-modal').style.display='none'" style="padding:0.75rem 1rem;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer">Cancelar</button>
+    </div>
+    <div id="email-status" style="margin-top:0.75rem;font-size:0.8rem;text-align:center"></div>
+  </div>
+</div>
 </body>
 </html>
