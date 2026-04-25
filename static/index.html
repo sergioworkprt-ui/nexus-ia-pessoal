@@ -682,8 +682,10 @@ body {
     <input type="text" id="login-user" placeholder="admin">
 
     <label>Password</label>
-    <input type="password" id="login-pass" placeholder="••••••••">
-
+    <div style="position:relative;margin-bottom:1rem">
+      <input type="password" id="login-pass" placeholder="••••••••" style="width:100%;padding:0.75rem 3rem 0.75rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Space Mono,monospace;font-size:0.85rem;outline:none">
+      <button onclick="togglePass('login-pass',this)" type="button" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--text3);padding:4px">👁️</button>
+    </div>
     <button class="btn-primary" onclick="doLogin()">Entrar</button>
     <div id="login-err" class="login-error"></div>
   </div>
@@ -895,11 +897,17 @@ body {
           <h3>🔒 Alterar Password</h3>
           <div class="settings-row">
             <label>Password atual</label>
-            <input type="password" id="pw-current" placeholder="••••••••">
+            <div style="position:relative;flex:1;max-width:240px">
+              <input type="password" id="pw-current" placeholder="••••••••" style="width:100%;padding:0.55rem 2.5rem 0.55rem 0.8rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Space Mono,monospace;font-size:0.78rem;outline:none">
+              <button onclick="togglePass('pw-current',this)" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:0.95rem;color:var(--text3)">👁️</button>
+            </div>
           </div>
           <div class="settings-row">
             <label>Nova password</label>
-            <input type="password" id="pw-new" placeholder="mínimo 6 caracteres">
+            <div style="position:relative;flex:1;max-width:240px">
+              <input type="password" id="pw-new" placeholder="mínimo 6 caracteres" style="width:100%;padding:0.55rem 2.5rem 0.55rem 0.8rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Space Mono,monospace;font-size:0.78rem;outline:none">
+              <button onclick="togglePass('pw-new',this)" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:0.95rem;color:var(--text3)">👁️</button>
+            </div>
           </div>
           <button class="btn-small" onclick="changePassword()" style="margin-top:0.75rem">Alterar password</button>
         </div>
