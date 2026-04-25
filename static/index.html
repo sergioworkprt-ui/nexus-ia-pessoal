@@ -1041,7 +1041,7 @@ function showTyping() {
 async function loadHistory() {
   const msgs = $('chat-messages');
   msgs.innerHTML = '';
-  const history = await api('/history');
+  const history = await api('/api/history');
   if (!history.length) {
     addMessage('assistant', 'Olá! Sou a **NEXUS**, a tua IA pessoal.\n\nEstou aqui para te ajudar a gerar rendimento online, criar conteúdo, pesquisar oportunidades e muito mais.\n\nComo te posso ajudar hoje? 🚀');
   } else {
@@ -1082,7 +1082,7 @@ async function sendMessage() {
   // enviar email guardado
   const email = localStorage.getItem('nexus_email') || "sergioworkprt@gmail.com";
 
-  const res = await api('/chat', 'POST', {
+  const res = await api('/api/chat', 'POST', {
     message: msg,
     notify,
     email
@@ -1107,7 +1107,7 @@ function quickMsg(msg) {
 // CLEAR HISTORY
 // ─────────────────────────────────────────────
 async function clearHistory() {
-  await api('/clear-history', 'POST');
+  await api('/api/clear-history', 'POST');
   loadHistory();
   showToast('Histórico apagado');
 }
@@ -1123,7 +1123,7 @@ $('chat-input') && $('chat-input').addEventListener('input', function() {
 async function loadTasks() {
   const list = $('tasks-list');
   list.innerHTML = '';
-  const res = await api('/tasks');
+  const res = await api('/api/tasks');
   if (!res.length) {
     list.innerHTML = '<div class="empty-state"><p>// sem tarefas ainda</p></div>';
     return;
@@ -1151,19 +1151,19 @@ async function createTask() {
   const title = $('task-title').value.trim();
   const description = $('task-desc').value.trim();
   if (!title) return;
-  await api('/tasks', 'POST', {title, description});
+  await api('/api/tasks', 'POST', {title, description});
   $('task-title').value = '';
   $('task-desc').value = '';
   loadTasks();
 }
 
 async function updateTask(id, status) {
-  await api('/tasks/' + id, 'PUT', {status});
+  await api('/api/tasks/' + id, 'PUT', {status});
   loadTasks();
 }
 
 async function deleteTask(id) {
-  await api('/tasks/' + id, 'DELETE');
+  await api('/api/tasks/' + id, 'DELETE');
   loadTasks();
 }
 
@@ -1173,7 +1173,7 @@ async function deleteTask(id) {
 async function loadMemory() {
   const list = $('memory-list');
   list.innerHTML = '';
-  const res = await api('/memory');
+  const res = await api('/api/memory');
   if (!res.length) {
     list.innerHTML = '<div class="empty-state"><p>// memória vazia — adiciona contexto sobre ti</p></div>';
     return;
@@ -1196,14 +1196,14 @@ async function saveMemory() {
   const key = $('mem-key').value.trim();
   const value = $('mem-val').value.trim();
   if (!key || !value) return;
-  await api('/memory', 'POST', {category, key, value});
+  await api('/api/memory', 'POST', {category, key, value});
   $('mem-key').value = '';
   $('mem-val').value = '';
   loadMemory();
 }
 
 async function deleteMemory(category, key) {
-  await api('/memory', 'DELETE', {category, key});
+  await api('/api/memory', 'DELETE', {category, key});
   loadMemory();
 }
 
@@ -1211,7 +1211,7 @@ async function deleteMemory(category, key) {
 // STATS
 // ─────────────────────────────────────────────
 async function loadStats() {
-  const s = await api('/stats');
+  const s = await api('/api/stats');
   $('stat-msgs').textContent = s.messages;
   $('stat-tasks').textContent = s.tasks;
   $('stat-done').textContent = s.tasks_done;
@@ -1228,7 +1228,7 @@ async function saveApiKey() {
 async function changePassword() {
   const current = $('pw-current').value;
   const newpw = $('pw-new').value;
-  const res = await api('/change-password', 'POST', {current, new: newpw});
+  const res = await api('/api/change-password', 'POST', {current, new: newpw});
   if (res.ok) {
     showToast('Password alterada!');
     $('pw-current').value = '';
@@ -1268,7 +1268,7 @@ async function submitEmailAnalysis() {
   status.style.color = 'var(--amber)';
 
   try {
-    const res = await api('/notify-analysis', 'POST', {email, prompt});
+    const res = await api('/api/notify-analysis', 'POST', {email, prompt});
     if (res.ok) {
       status.textContent = '✅ Análise concluída! Email enviado para ' + email;
       status.style.color = 'var(--green)';
