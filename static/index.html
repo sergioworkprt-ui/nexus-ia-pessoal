@@ -947,7 +947,7 @@ function $(id) { return document.getElementById(id); }
 async function doLogin() {
   const username = $('login-user').value.trim();
   const password = $('login-pass').value;
-  const res = await api('/login', 'POST', {username, password});
+  const res = await api('/api/login', 'POST', {username, password});
   if (res.ok) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'flex';
@@ -959,7 +959,7 @@ async function doLogin() {
 }
 
 async function doLogout() {
-  await api('/logout', 'POST');
+  await api('/api/logout', 'POST');
   location.reload();
 }
 
@@ -973,7 +973,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (input) input.value = savedEmail;
   }
 
-  const me = await api('/me');
+  const me = await api('/api/me');
   if (me.username) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'flex';
