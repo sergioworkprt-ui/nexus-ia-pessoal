@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
 <style>
 :root {
   --bg: #0a0a0f;
@@ -31,7 +32,9 @@
   --radius: 12px;
   --radius-sm: 8px;
 }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
   font-family: 'Syne', sans-serif;
   background: var(--bg);
@@ -41,12 +44,13 @@ body {
   display: flex;
 }
 
-/* ── Login ── */
+/* LOGIN */
 #login-screen {
   position: fixed; inset: 0; z-index: 100;
   background: var(--bg);
   display: flex; align-items: center; justify-content: center;
 }
+
 .login-box {
   width: 360px;
   border: 1px solid var(--border2);
@@ -54,36 +58,75 @@ body {
   padding: 2.5rem 2rem;
   background: var(--bg2);
 }
+
 .login-logo {
   text-align: center; margin-bottom: 2rem;
 }
+
 .login-logo h1 {
   font-size: 2rem; font-weight: 800; letter-spacing: 0.1em;
   background: linear-gradient(135deg, var(--accent2), var(--cyan));
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
-.login-logo p { color: var(--text3); font-size: 0.8rem; margin-top: 4px; font-family: 'Space Mono', monospace; }
-.login-box label { display: block; font-size: 0.75rem; color: var(--text3); margin-bottom: 6px; letter-spacing: 0.05em; }
+
+.login-logo p {
+  color: var(--text3);
+  font-size: 0.8rem;
+  margin-top: 4px;
+  font-family: 'Space Mono', monospace;
+}
+
+.login-box label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text3);
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+
 .login-box input {
-  width: 100%; padding: 0.75rem 1rem;
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text);
-  font-family: 'Space Mono', monospace; font-size: 0.85rem;
-  outline: none; margin-bottom: 1rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  font-size: 0.85rem;
+  outline: none;
+  margin-bottom: 1rem;
   transition: border-color 0.2s;
 }
-.login-box input:focus { border-color: var(--accent); }
-.btn-primary {
-  width: 100%; padding: 0.85rem;
-  background: var(--accent); border: none; border-radius: var(--radius-sm);
-  color: white; font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 700;
-  cursor: pointer; letter-spacing: 0.05em; transition: opacity 0.2s;
-}
-.btn-primary:hover { opacity: 0.85; }
-.login-error { color: var(--red); font-size: 0.8rem; margin-top: 0.5rem; text-align: center; }
 
-/* ── Layout ── */
+.login-box input:focus { border-color: var(--accent); }
+
+.btn-primary {
+  width: 100%;
+  padding: 0.85rem;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-family: 'Syne', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: opacity 0.2s;
+}
+
+.btn-primary:hover { opacity: 0.85; }
+
+.login-error {
+  color: var(--red);
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+/* SIDEBAR + LAYOUT */
 #app { display: flex; width: 100%; height: 100vh; }
+
 #sidebar {
   width: 220px; min-width: 220px;
   background: var(--bg2);
@@ -91,323 +134,606 @@ body {
   display: flex; flex-direction: column;
   padding: 1.25rem 0;
 }
+
 .sidebar-logo {
   padding: 0 1.25rem 1.25rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.75rem;
 }
+
 .sidebar-logo span {
-  font-size: 1.3rem; font-weight: 800; letter-spacing: 0.1em;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   background: linear-gradient(135deg, var(--accent2), var(--cyan));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
-.sidebar-logo small { display: block; color: var(--text3); font-size: 0.65rem; font-family: 'Space Mono', monospace; }
+
+.sidebar-logo small {
+  display: block;
+  color: var(--text3);
+  font-size: 0.65rem;
+  font-family: 'Space Mono', monospace;
+}
+
 .nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 0.65rem 1.25rem; cursor: pointer;
-  color: var(--text2); font-size: 0.85rem; font-weight: 500;
-  border-left: 3px solid transparent; transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.65rem 1.25rem;
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-left: 3px solid transparent;
+  transition: all 0.15s;
 }
+
 .nav-item:hover { color: var(--text); background: var(--bg3); }
 .nav-item.active { color: var(--accent2); border-left-color: var(--accent); background: rgba(124,111,255,0.08); }
+
 .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
-.sidebar-bottom { margin-top: auto; border-top: 1px solid var(--border); padding-top: 0.75rem; }
-.user-pill {
-  display: flex; align-items: center; gap: 8px;
-  padding: 0.6rem 1.25rem; cursor: pointer;
-  color: var(--text2); font-size: 0.8rem;
-}
-.user-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--green); box-shadow: 0 0 6px var(--green);
+
+.sidebar-bottom {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
 }
 
-/* ── Main ── */
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.6rem 1.25rem;
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 0.8rem;
+}
+
+.user-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+/* MAIN */
 #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-/* ── Panels ── */
+/* PANELS */
 .panel { display: none; flex-direction: column; flex: 1; overflow: hidden; }
 .panel.active { display: flex; }
+
 .panel-header {
   padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
   flex-shrink: 0;
 }
+
 .panel-header h2 { font-size: 1rem; font-weight: 700; }
 .panel-header p { font-size: 0.75rem; color: var(--text3); font-family: 'Space Mono', monospace; }
 
-/* ── Chat ── */
+/* CHAT */
 #chat-messages {
   flex: 1; overflow-y: auto;
   padding: 1.5rem;
   display: flex; flex-direction: column; gap: 1rem;
   scroll-behavior: smooth;
 }
+
 #chat-messages::-webkit-scrollbar { width: 4px; }
 #chat-messages::-webkit-scrollbar-track { background: transparent; }
 #chat-messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
 .msg { display: flex; gap: 10px; max-width: 80%; }
 .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
 .msg-avatar {
   width: 32px; height: 32px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 0.7rem; font-weight: 700; flex-shrink: 0;
 }
+
 .msg.user .msg-avatar { background: var(--accent); color: white; }
 .msg.assistant .msg-avatar {
   background: linear-gradient(135deg, var(--accent), var(--cyan));
   color: white;
 }
+
 .msg-bubble {
   padding: 0.75rem 1rem;
   border-radius: var(--radius);
   font-size: 0.88rem; line-height: 1.65;
   white-space: pre-wrap; word-break: break-word;
 }
-.msg.user .msg-bubble { background: var(--accent); color: white; border-bottom-right-radius: 4px; }
-.msg.assistant .msg-bubble { background: var(--bg3); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-.msg-bubble strong { font-weight: 700; }
-.msg-bubble em { font-style: italic; color: var(--accent2); }
+
+.msg.user .msg-bubble {
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.msg.assistant .msg-bubble {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.typing-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent2);
+  animation: blink 1s infinite;
+  margin: 0 2px;
+}
+
+@keyframes blink {
+  0%,80%,100% { opacity: 0.2 }
+  40% { opacity: 1 }
+}
+
 .chat-input-area {
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--border);
   display: flex; gap: 10px; align-items: flex-end;
   flex-shrink: 0;
 }
+
 #chat-input {
-  flex: 1; padding: 0.75rem 1rem;
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius); color: var(--text);
-  font-family: 'Syne', sans-serif; font-size: 0.88rem;
-  outline: none; resize: none; max-height: 160px; min-height: 44px;
-  transition: border-color 0.2s; line-height: 1.5;
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.88rem;
+  outline: none;
+  resize: none;
+  max-height: 160px;
+  min-height: 44px;
+  transition: border-color 0.2s;
+  line-height: 1.5;
 }
+
 #chat-input:focus { border-color: var(--accent); }
+
 .send-btn {
-  width: 44px; height: 44px; border-radius: var(--radius-sm);
-  background: var(--accent); border: none; cursor: pointer;
+  width: 44px; height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; transition: opacity 0.2s;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
 }
+
 .send-btn:hover { opacity: 0.85; }
+
 .send-btn svg { width: 18px; height: 18px; fill: white; }
-.typing-dot {
-  display: inline-block; width: 6px; height: 6px;
-  border-radius: 50%; background: var(--accent2);
-  animation: blink 1s infinite; margin: 0 2px;
-}
-.typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dot:nth-child(3) { animation-delay: 0.4s; }
-@keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+
 .chat-quick-actions {
   padding: 0.5rem 1.5rem 0;
   display: flex; gap: 8px; flex-wrap: wrap;
   flex-shrink: 0;
 }
-.quick-btn {
-  padding: 0.35rem 0.8rem; border-radius: 20px;
-  border: 1px solid var(--border2); background: transparent;
-  color: var(--text2); font-family: 'Syne', sans-serif;
-  font-size: 0.75rem; cursor: pointer; transition: all 0.15s;
-}
-.quick-btn:hover { border-color: var(--accent); color: var(--accent2); }
 
-/* ── Tasks ── */
+.quick-btn {
+  padding: 0.35rem 0.8rem;
+  border-radius: 20px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text2);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.quick-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent2);
+}
+
+/* TASKS */
 .tasks-body { flex: 1; overflow-y: auto; padding: 1.25rem; }
+
 .task-form { display: flex; gap: 8px; margin-bottom: 1.25rem; }
+
 .task-form input {
-  flex: 1; padding: 0.65rem 1rem;
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text);
-  font-family: 'Syne', sans-serif; font-size: 0.85rem; outline: none;
+  flex: 1;
+  padding: 0.65rem 1rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.85rem;
+  outline: none;
 }
+
 .task-form input:focus { border-color: var(--accent); }
+
 .btn-small {
-  padding: 0.65rem 1rem; border-radius: var(--radius-sm);
-  background: var(--accent); border: none; color: white;
-  font-family: 'Syne', sans-serif; font-size: 0.8rem; font-weight: 700;
-  cursor: pointer; white-space: nowrap; transition: opacity 0.2s;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  border: none;
+  color: white;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
 }
+
 .btn-small:hover { opacity: 0.85; }
+
 .task-card {
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 0.9rem 1rem;
-  margin-bottom: 0.6rem; display: flex; align-items: center; gap: 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
+
 .task-status {
-  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
+
 .status-pending { background: var(--amber); }
 .status-done { background: var(--green); }
 .status-in-progress { background: var(--cyan); }
+
 .task-title { font-size: 0.88rem; font-weight: 600; flex: 1; }
 .task-desc { font-size: 0.75rem; color: var(--text3); margin-top: 2px; }
+
 .task-actions { display: flex; gap: 6px; }
+
 .task-btn {
-  padding: 0.3rem 0.7rem; border-radius: var(--radius-sm);
-  border: 1px solid var(--border2); background: transparent;
-  color: var(--text2); font-family: 'Syne', sans-serif;
-  font-size: 0.72rem; cursor: pointer; transition: all 0.15s;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text2);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s;
 }
+
 .task-btn:hover { border-color: var(--accent); color: var(--accent2); }
 .task-btn.danger:hover { border-color: var(--red); color: var(--red); }
-.badge {
-  padding: 2px 8px; border-radius: 20px; font-size: 0.68rem; font-weight: 700;
-}
-.badge-pending { background: rgba(255,184,48,0.15); color: var(--amber); }
-.badge-done { background: rgba(61,220,132,0.15); color: var(--green); }
-.badge-in-progress { background: rgba(64,216,255,0.15); color: var(--cyan); }
 
-/* ── Memory ── */
+/* MEMORY */
 .memory-body { flex: 1; overflow-y: auto; padding: 1.25rem; }
-.memory-form {
-  display: grid; grid-template-columns: 1fr 1fr 2fr auto;
-  gap: 8px; margin-bottom: 1.25rem;
-}
-.memory-form input, .memory-form select {
-  padding: 0.6rem 0.8rem;
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text);
-  font-family: 'Syne', sans-serif; font-size: 0.82rem; outline: none;
-}
-.memory-form select option { background: var(--bg2); }
-.memory-card {
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 0.7rem 1rem;
-  margin-bottom: 0.5rem; display: flex; align-items: center; gap: 10px;
-}
-.mem-cat { font-size: 0.65rem; color: var(--text3); font-family: 'Space Mono', monospace; min-width: 70px; }
-.mem-key { font-size: 0.82rem; font-weight: 600; min-width: 100px; }
-.mem-val { font-size: 0.8rem; color: var(--text2); flex: 1; }
-.mem-del { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 1rem; }
-.mem-del:hover { color: var(--red); }
 
-/* ── Stats ── */
-.stats-body { flex: 1; overflow-y: auto; padding: 1.25rem; }
-.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-.stat-card {
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 1.25rem;
+.memory-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr auto;
+  gap: 8px;
+  margin-bottom: 1.25rem;
 }
-.stat-label { font-size: 0.72rem; color: var(--text3); font-family: 'Space Mono', monospace; margin-bottom: 8px; }
-.stat-value { font-size: 2rem; font-weight: 800; }
-.opportunities-section h3 { font-size: 0.9rem; margin-bottom: 1rem; color: var(--text2); }
+
+.memory-form input,
+.memory-form select {
+  padding: 0.6rem 0.8rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.memory-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 1rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mem-cat {
+  font-size: 0.65rem;
+  color: var(--text3);
+  font-family: 'Space Mono', monospace;
+  min-width: 70px;
+}
+
+.mem-key {
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-width: 100px;
+}
+
+.mem-val {
+  font-size: 0.8rem;
+  color: var(--text2);
+  flex: 1;
+}
+
+.mem-del {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.mem-del:hover { color: var(--red); }
+/* STATS */
+.stats-body { flex: 1; overflow-y: auto; padding: 1.25rem; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  color: var(--text3);
+  font-family: 'Space Mono', monospace;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.opportunities-section h3 {
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  color: var(--text2);
+}
+
 .opp-card {
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 1rem 1.25rem;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
 }
-.opp-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 4px; }
-.opp-desc { font-size: 0.78rem; color: var(--text2); margin-bottom: 8px; line-height: 1.5; }
-.opp-meta { display: flex; gap: 12px; }
-.opp-badge { padding: 3px 10px; border-radius: 20px; font-size: 0.68rem; font-weight: 700; }
-.opp-effort { background: rgba(255,184,48,0.12); color: var(--amber); }
-.opp-income { background: rgba(61,220,132,0.12); color: var(--green); }
 
-/* ── Settings ── */
+.opp-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.opp-desc {
+  font-size: 0.78rem;
+  color: var(--text2);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.opp-meta { display: flex; gap: 12px; }
+
+.opp-badge {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.opp-effort {
+  background: rgba(255,184,48,0.12);
+  color: var(--amber);
+}
+
+.opp-income {
+  background: rgba(61,220,132,0.12);
+  color: var(--green);
+}
+
+/* SETTINGS */
 .settings-body { flex: 1; overflow-y: auto; padding: 1.25rem; }
+
 .settings-section {
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 1.25rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
   margin-bottom: 1rem;
 }
-.settings-section h3 { font-size: 0.85rem; font-weight: 700; margin-bottom: 1rem; color: var(--text2); }
-.settings-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
-.settings-row label { font-size: 0.82rem; color: var(--text2); }
+
+.settings-section h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--text2);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.settings-row label {
+  font-size: 0.82rem;
+  color: var(--text2);
+}
+
 .settings-row input {
-  flex: 1; max-width: 240px; padding: 0.55rem 0.8rem;
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text);
-  font-family: 'Space Mono', monospace; font-size: 0.78rem; outline: none;
+  flex: 1;
+  max-width: 240px;
+  padding: 0.55rem 0.8rem;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  font-size: 0.78rem;
+  outline: none;
 }
+
 .settings-row input:focus { border-color: var(--accent); }
-.settings-hint { font-size: 0.72rem; color: var(--text3); margin-top: 4px; font-family: 'Space Mono', monospace; }
-.btn-danger {
-  padding: 0.55rem 1rem; border-radius: var(--radius-sm);
-  background: rgba(255,85,85,0.1); border: 1px solid rgba(255,85,85,0.3);
-  color: var(--red); font-family: 'Syne', sans-serif;
-  font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.2s;
+
+.settings-hint {
+  font-size: 0.72rem;
+  color: var(--text3);
+  margin-top: 4px;
+  font-family: 'Space Mono', monospace;
 }
+
+.btn-danger {
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255,85,85,0.1);
+  border: 1px solid rgba(255,85,85,0.3);
+  color: var(--red);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
 .btn-danger:hover { background: rgba(255,85,85,0.2); }
+
+/* TOAST */
 .toast {
-  position: fixed; bottom: 1.5rem; right: 1.5rem;
-  background: var(--bg3); border: 1px solid var(--border2);
-  border-radius: var(--radius-sm); padding: 0.75rem 1.25rem;
-  font-size: 0.82rem; z-index: 1000; opacity: 0;
-  transform: translateY(10px); transition: all 0.3s;
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1.25rem;
+  font-size: 0.82rem;
+  z-index: 1000;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s;
   pointer-events: none;
 }
-.toast.show { opacity: 1; transform: translateY(0); }
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .toast.success { border-color: var(--green); color: var(--green); }
 .toast.error { border-color: var(--red); color: var(--red); }
 
+/* EMPTY STATE */
 .empty-state {
-  text-align: center; padding: 3rem 1rem; color: var(--text3);
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text3);
 }
-.empty-state p { font-family: 'Space Mono', monospace; font-size: 0.8rem; }
 
+.empty-state p {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.8rem;
+}
+
+/* RESPONSIVE */
 @media (max-width: 600px) {
   #sidebar { width: 60px; min-width: 60px; }
-  .nav-item span, .sidebar-logo small, .sidebar-logo .logo-text, .user-pill span { display: none; }
+  .nav-item span,
+  .sidebar-logo small,
+  .sidebar-logo .logo-text,
+  .user-pill span { display: none; }
   .sidebar-logo span { font-size: 0.9rem; }
   .memory-form { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
-<body>
 
-<!-- Login -->
+<body>
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
       <h1>NEXUS</h1>
-      <p>// ia pessoal autónoma</p>
+      <p>// IA pessoal — login seguro</p>
     </div>
-    <label>UTILIZADOR</label>
-    <input type="text" id="login-user" value="admin" autocomplete="username">
-    <label>PASSWORD</label>
-    <input type="password" id="login-pass" autocomplete="current-password">
-    <button class="btn-primary" onclick="doLogin()">ENTRAR</button>
-    <div class="login-error" id="login-err"></div>
+
+    <label>Utilizador</label>
+    <input type="text" id="login-user" placeholder="admin">
+
+    <label>Password</label>
+    <input type="password" id="login-pass" placeholder="••••••••">
+
+    <button class="btn-primary" onclick="doLogin()">Entrar</button>
+    <div id="login-err" class="login-error"></div>
   </div>
 </div>
 
-<!-- App -->
 <div id="app" style="display:none">
+
+  <!-- SIDEBAR -->
   <div id="sidebar">
     <div class="sidebar-logo">
       <span>NEXUS</span>
-      <small class="logo-text">ia pessoal</small>
+      <small>// IA pessoal</small>
     </div>
-    <div class="nav-item active" onclick="showPanel('chat')" id="nav-chat">
-      <span class="nav-icon">💬</span><span>Chat</span>
+
+    <div class="nav-item active" id="nav-chat" onclick="showPanel('chat')">
+      <div class="nav-icon">💬</div><span>Chat</span>
     </div>
-    <div class="nav-item" onclick="showPanel('tasks')" id="nav-tasks">
-      <span class="nav-icon">✅</span><span>Tarefas</span>
+
+    <div class="nav-item" id="nav-tasks" onclick="showPanel('tasks')">
+      <div class="nav-icon">📋</div><span>Tarefas</span>
     </div>
-    <div class="nav-item" onclick="showPanel('memory')" id="nav-memory">
-      <span class="nav-icon">🧠</span><span>Memória</span>
+
+    <div class="nav-item" id="nav-memory" onclick="showPanel('memory')">
+      <div class="nav-icon">🧠</div><span>Memória</span>
     </div>
-    <div class="nav-item" onclick="showPanel('stats')" id="nav-stats">
-      <span class="nav-icon">📊</span><span>Dashboard</span>
+
+    <div class="nav-item" id="nav-stats" onclick="showPanel('stats')">
+      <div class="nav-icon">📊</div><span>Dashboard</span>
     </div>
-    <div class="nav-item" onclick="showPanel('settings')" id="nav-settings">
-      <span class="nav-icon">⚙️</span><span>Config</span>
+
+    <div class="nav-item" id="nav-settings" onclick="showPanel('settings')">
+      <div class="nav-icon">⚙️</div><span>Configurações</span>
     </div>
+
     <div class="sidebar-bottom">
-      <button id="install-btn" onclick="installApp()" style="display:none;align-items:center;gap:8px;margin:0 10px 6px;padding:0.5rem 1rem;background:linear-gradient(135deg,#7c6fff,#40d8ff);border:none;border-radius:8px;color:white;font-family:Syne,sans-serif;font-size:0.78rem;font-weight:700;cursor:pointer">📱 Instalar App</button>
-<div class="user-pill" onclick="doLogout()">
+      <button id="install-btn" onclick="installApp()" style="display:none;margin:0.5rem 1.25rem;padding:0.55rem 1rem;background:linear-gradient(135deg,#7c6fff,#40d8ff);border:none;border-radius:8px;color:white;font-family:Syne,sans-serif;font-size:0.78rem;font-weight:700;cursor:pointer">
+        📱 Instalar App
+      </button>
+
+      <div class="user-pill" onclick="doLogout()">
         <div class="user-dot"></div>
         <span id="sidebar-user">admin</span>
       </div>
     </div>
   </div>
 
+  <!-- MAIN -->
   <div id="main">
 
-    <!-- Chat Panel -->
+    <!-- CHAT PANEL -->
     <div class="panel active" id="panel-chat">
       <div class="panel-header">
         <div>
@@ -416,19 +742,23 @@ body {
         </div>
         <button class="btn-danger" onclick="clearHistory()" style="font-size:0.72rem;padding:0.4rem 0.8rem">Limpar</button>
       </div>
+
       <div style="padding:0.5rem 1.5rem 0;display:flex;gap:8px">
-  <input type="text" id="web-search-input" placeholder="🔍 Pesquisar na web..." style="flex:1;padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;font-size:0.82rem;outline:none" onkeydown="if(event.key==='Enter')doWebSearch()">
-  <button onclick="doWebSearch()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">Pesquisar</button>
-  <button onclick="doYouTube()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--red);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">▶ YouTube</button>
-</div>
-<div class="chat-quick-actions">
+        <input type="text" id="web-search-input" placeholder="🔍 Pesquisar na web..." style="flex:1;padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;font-size:0.82rem;outline:none" onkeydown="if(event.key==='Enter')doWebSearch()">
+        <button onclick="doWebSearch()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">Pesquisar</button>
+        <button onclick="doYouTube()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--red);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">▶ YouTube</button>
+      </div>
+
+      <div class="chat-quick-actions">
         <button class="quick-btn" onclick="showEmailModal()" style="border-color:var(--green);color:var(--green)">📧 Analisar e notificar por email</button>
-<button class="quick-btn" onclick="quickMsg('Quais são as melhores formas de gerar rendimento online em 2024 com pouco investimento inicial?')">💰 Ideias de rendimento</button>
+        <button class="quick-btn" onclick="quickMsg('Quais são as melhores formas de gerar rendimento online em 2024 com pouco investimento inicial?')">💰 Ideias de rendimento</button>
         <button class="quick-btn" onclick="quickMsg('Cria um plano de ação para esta semana para começar a gerar rendimento online.')">📅 Plano semanal</button>
         <button class="quick-btn" onclick="quickMsg('Analisa o meu perfil e sugere as 3 melhores oportunidades para mim.')">🎯 Oportunidades</button>
         <button class="quick-btn" onclick="quickMsg('Escreve um post para LinkedIn sobre produtividade com IA.')">✍️ Criar conteúdo</button>
       </div>
+
       <div id="chat-messages"></div>
+
       <div class="chat-input-area">
         <textarea id="chat-input" placeholder="Escreve a tua mensagem..." rows="1"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
@@ -438,7 +768,7 @@ body {
       </div>
     </div>
 
-    <!-- Tasks Panel -->
+    <!-- TASKS PANEL -->
     <div class="panel" id="panel-tasks">
       <div class="panel-header">
         <div><h2>Tarefas</h2><p>// gestão de projetos e ações</p></div>
@@ -454,7 +784,7 @@ body {
       </div>
     </div>
 
-    <!-- Memory Panel -->
+    <!-- MEMORY PANEL -->
     <div class="panel" id="panel-memory">
       <div class="panel-header">
         <div><h2>Memória</h2><p>// contexto persistente da IA</p></div>
@@ -476,7 +806,7 @@ body {
       </div>
     </div>
 
-    <!-- Stats Panel -->
+    <!-- STATS PANEL -->
     <div class="panel" id="panel-stats">
       <div class="panel-header">
         <div><h2>Dashboard</h2><p>// estatísticas e oportunidades</p></div>
@@ -500,8 +830,10 @@ body {
             <div class="stat-value" id="stat-mem" style="color:var(--amber)">—</div>
           </div>
         </div>
+
         <div class="opportunities-section">
           <h3>// Oportunidades de rendimento recomendadas</h3>
+
           <div class="opp-card">
             <div class="opp-title">✍️ Freelance de escrita com IA</div>
             <div class="opp-desc">Usa a NEXUS para criar artigos, posts e conteúdo para clientes. Plataformas: Fiverr, Workana, Upwork.</div>
@@ -510,6 +842,7 @@ body {
               <span class="opp-badge opp-income">€300-1500/mês</span>
             </div>
           </div>
+
           <div class="opp-card">
             <div class="opp-title">📱 Gestão de redes sociais</div>
             <div class="opp-desc">Gere as redes de pequenos negócios locais. A NEXUS cria o conteúdo, tu publicas e cobras mensalmente.</div>
@@ -518,6 +851,7 @@ body {
               <span class="opp-badge opp-income">€200-800/cliente/mês</span>
             </div>
           </div>
+
           <div class="opp-card">
             <div class="opp-title">📧 Newsletter monetizada</div>
             <div class="opp-desc">Cria uma newsletter semanal num nicho. A NEXUS escreve o conteúdo. Monetiza com afiliados ou subscritores pagos.</div>
@@ -526,6 +860,7 @@ body {
               <span class="opp-badge opp-income">€100-2000/mês</span>
             </div>
           </div>
+
           <div class="opp-card">
             <div class="opp-title">🎓 Curso ou ebook digital</div>
             <div class="opp-desc">Cria um produto digital sobre algo que sabes. A NEXUS ajuda a estruturar, escrever e criar materiais.</div>
@@ -534,12 +869,13 @@ body {
               <span class="opp-badge opp-income">Receita passiva</span>
             </div>
           </div>
+
           <button class="btn-small" onclick="quickMsg('Quero explorar uma das oportunidades de rendimento. Ajuda-me a criar um plano de ação detalhado.')" style="margin-top:0.5rem">💬 Pedir ajuda à NEXUS ↗</button>
         </div>
       </div>
     </div>
 
-    <!-- Settings Panel -->
+    <!-- SETTINGS PANEL -->
     <div class="panel" id="panel-settings">
       <div class="panel-header">
         <div><h2>Configurações</h2><p>// api keys e preferências</p></div>
@@ -554,6 +890,7 @@ body {
           <div class="settings-hint">Esta chave é guardada no servidor. Obtém a tua em console.anthropic.com (gratuita até $5)</div>
           <button class="btn-small" onclick="saveApiKey()" style="margin-top:0.75rem">Guardar chave</button>
         </div>
+
         <div class="settings-section">
           <h3>🔒 Alterar Password</h3>
           <div class="settings-row">
@@ -566,6 +903,7 @@ body {
           </div>
           <button class="btn-small" onclick="changePassword()" style="margin-top:0.75rem">Alterar password</button>
         </div>
+
         <div class="settings-section">
           <h3>⚠️ Zona de Perigo</h3>
           <div style="display:flex;gap:10px">
@@ -580,25 +918,32 @@ body {
 </div>
 
 <div class="toast" id="toast"></div>
-
 <script>
-const $ = id => document.getElementById(id);
-let currentPanel = 'chat';
-
-async function api(path, method='GET', body=null) {
-  const opts = { method, headers: {'Content-Type':'application/json'}, credentials: 'include' };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch('/api' + path, opts);
-  return r.json();
+// ─────────────────────────────────────────────
+// API WRAPPER
+// ─────────────────────────────────────────────
+async function api(url, method = 'GET', data = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (data) opts.body = JSON.stringify(data);
+  const res = await fetch(url, opts);
+  return res.json();
 }
 
-function showToast(msg, type='success') {
+// ─────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────
+function showToast(msg, type = 'success') {
   const t = $('toast');
   t.textContent = msg;
   t.className = 'toast show ' + type;
-  setTimeout(() => t.className = 'toast', 2500);
+  setTimeout(() => t.classList.remove('show'), 3000);
 }
 
+function $(id) { return document.getElementById(id); }
+
+// ─────────────────────────────────────────────
+// LOGIN
+// ─────────────────────────────────────────────
 async function doLogin() {
   const username = $('login-user').value.trim();
   const password = $('login-pass').value;
@@ -620,6 +965,14 @@ async function doLogout() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   $('login-pass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+  // Carregar email guardado
+  const savedEmail = localStorage.getItem('nexus_email');
+  if (savedEmail) {
+    const input = $('notify-email');
+    if (input) input.value = savedEmail;
+  }
+
   const me = await api('/me');
   if (me.username) {
     $('login-screen').style.display = 'none';
@@ -629,6 +982,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+// ─────────────────────────────────────────────
+// PAINÉIS
+// ─────────────────────────────────────────────
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -640,7 +996,9 @@ function showPanel(name) {
   if (name === 'stats') loadStats();
 }
 
-// ── CHAT ──
+// ─────────────────────────────────────────────
+// MARKDOWN
+// ─────────────────────────────────────────────
 function renderMarkdown(text) {
   return text
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -650,6 +1008,9 @@ function renderMarkdown(text) {
     .replace(/^[-•] (.+)$/gm, '• $1');
 }
 
+// ─────────────────────────────────────────────
+// CHAT UI
+// ─────────────────────────────────────────────
 function addMessage(role, content, animate=false) {
   const msgs = $('chat-messages');
   const div = document.createElement('div');
@@ -674,6 +1035,9 @@ function showTyping() {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
+// ─────────────────────────────────────────────
+// HISTÓRICO
+// ─────────────────────────────────────────────
 async function loadHistory() {
   const msgs = $('chat-messages');
   msgs.innerHTML = '';
@@ -685,125 +1049,178 @@ async function loadHistory() {
   }
 }
 
+// ─────────────────────────────────────────────
+// DETEÇÃO INTELIGENTE DE INTENÇÃO DE EMAIL
+// ─────────────────────────────────────────────
+function detectEmailIntent(text) {
+  text = text.toLowerCase();
+
+  const triggers = [
+    "notifica", "avisa", "envia", "manda",
+    "email", "quando acabar", "quando terminar",
+    "envia-me", "avisa-me", "notifica-me"
+  ];
+
+  return triggers.some(t => text.includes(t));
+}
+
+// ─────────────────────────────────────────────
+// ENVIAR MENSAGEM (com email automático)
+// ─────────────────────────────────────────────
 async function sendMessage() {
   const input = $('chat-input');
   const msg = input.value.trim();
   if (!msg) return;
+
   input.value = ''; input.style.height = 'auto';
   addMessage('user', msg, true);
   showTyping();
-  const res = await api('/chat', 'POST', {message: msg});
+
+  // detectar intenção de email
+  const notify = detectEmailIntent(msg);
+
+  // enviar email guardado
+  const email = localStorage.getItem('nexus_email') || "sergioworkprt@gmail.com";
+
+  const res = await api('/chat', 'POST', {
+    message: msg,
+    notify,
+    email
+  });
+
   const typing = $('typing-indicator');
   if (typing) typing.remove();
+
   addMessage('assistant', res.response || res.error || 'Erro', true);
 }
 
+// ─────────────────────────────────────────────
+// QUICK MESSAGE
+// ─────────────────────────────────────────────
 function quickMsg(msg) {
   $('chat-input').value = msg;
   sendMessage();
   showPanel('chat');
 }
 
+// ─────────────────────────────────────────────
+// CLEAR HISTORY
+// ─────────────────────────────────────────────
 async function clearHistory() {
   await api('/clear-history', 'POST');
   loadHistory();
   showToast('Histórico apagado');
 }
 
+// Ajuste automático da altura do input
 $('chat-input') && $('chat-input').addEventListener('input', function() {
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 160) + 'px';
 });
-
-// ── TASKS ──
+// ─────────────────────────────────────────────
+// TASKS
+// ─────────────────────────────────────────────
 async function loadTasks() {
-  const tasks = await api('/tasks');
   const list = $('tasks-list');
-  if (!tasks.length) { list.innerHTML = '<div class="empty-state"><p>// sem tarefas ainda</p></div>'; return; }
-  list.innerHTML = tasks.map(t => `
-    <div class="task-card">
-      <div class="task-status status-${t.status}"></div>
+  list.innerHTML = '';
+  const res = await api('/tasks');
+  if (!res.length) {
+    list.innerHTML = '<div class="empty-state"><p>// sem tarefas ainda</p></div>';
+    return;
+  }
+  res.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'task-card';
+    div.innerHTML = `
+      <div class="task-status ${t.status === 'done' ? 'status-done' : t.status === 'in-progress' ? 'status-in-progress' : 'status-pending'}"></div>
       <div style="flex:1">
         <div class="task-title">${t.title}</div>
-        ${t.description ? `<div class="task-desc">${t.description}</div>` : ''}
-        ${t.result ? `<div class="task-desc" style="color:var(--green);margin-top:4px">✓ ${t.result}</div>` : ''}
+        <div class="task-desc">${t.description || ''}</div>
       </div>
-      <span class="badge badge-${t.status}">${t.status}</span>
       <div class="task-actions">
-        ${t.status !== 'done' ? `<button class="task-btn" onclick="markDone(${t.id})">✓ Feito</button>` : ''}
-        ${t.status === 'pending' ? `<button class="task-btn" onclick="markInProgress(${t.id})">▶ Iniciar</button>` : ''}
-        <button class="task-btn danger" onclick="deleteTask(${t.id})">✕</button>
+        <button class="task-btn" onclick="updateTask(${t.id}, 'in-progress')">↻</button>
+        <button class="task-btn" onclick="updateTask(${t.id}, 'done')">✔</button>
+        <button class="task-btn danger" onclick="deleteTask(${t.id})">✖</button>
       </div>
-    </div>
-  `).join('');
+    `;
+    list.appendChild(div);
+  });
 }
 
 async function createTask() {
   const title = $('task-title').value.trim();
+  const description = $('task-desc').value.trim();
   if (!title) return;
-  await api('/tasks', 'POST', {title, description: $('task-desc').value.trim()});
-  $('task-title').value = ''; $('task-desc').value = '';
-  loadTasks(); showToast('Tarefa criada!');
-}
-
-async function markDone(id) {
-  const result = prompt('Resultado / notas (opcional):') || '';
-  await api('/tasks/' + id, 'PATCH', {status: 'done', result});
+  await api('/tasks', 'POST', {title, description});
+  $('task-title').value = '';
+  $('task-desc').value = '';
   loadTasks();
 }
 
-async function markInProgress(id) {
-  await api('/tasks/' + id, 'PATCH', {status: 'in-progress'});
+async function updateTask(id, status) {
+  await api('/tasks/' + id, 'PUT', {status});
   loadTasks();
 }
 
 async function deleteTask(id) {
-  if (!confirm('Apagar esta tarefa?')) return;
   await api('/tasks/' + id, 'DELETE');
   loadTasks();
 }
 
-// ── MEMORY ──
+// ─────────────────────────────────────────────
+// MEMORY
+// ─────────────────────────────────────────────
 async function loadMemory() {
-  const mems = await api('/memory');
   const list = $('memory-list');
-  if (!mems.length) { list.innerHTML = '<div class="empty-state"><p>// adiciona contexto: nome, objetivos, projetos...</p></div>'; return; }
-  list.innerHTML = mems.map(m => `
-    <div class="memory-card">
-      <span class="mem-cat">${m.category}</span>
-      <span class="mem-key">${m.key}</span>
-      <span class="mem-val">${m.value}</span>
-      <button class="mem-del" onclick="deleteMemory(${m.id})">✕</button>
-    </div>
-  `).join('');
+  list.innerHTML = '';
+  const res = await api('/memory');
+  if (!res.length) {
+    list.innerHTML = '<div class="empty-state"><p>// memória vazia — adiciona contexto sobre ti</p></div>';
+    return;
+  }
+  res.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'memory-card';
+    div.innerHTML = `
+      <div class="mem-cat">${m.category}</div>
+      <div class="mem-key">${m.key}</div>
+      <div class="mem-val">${m.value}</div>
+      <button class="mem-del" onclick="deleteMemory('${m.category}','${m.key}')">🗑</button>
+    `;
+    list.appendChild(div);
+  });
 }
 
 async function saveMemory() {
+  const category = $('mem-cat').value;
   const key = $('mem-key').value.trim();
   const value = $('mem-val').value.trim();
   if (!key || !value) return;
-  await api('/memory', 'POST', {category: $('mem-cat').value, key, value});
-  $('mem-key').value = ''; $('mem-val').value = '';
-  loadMemory(); showToast('Memória guardada!');
-}
-
-async function deleteMemory(id) {
-  await api('/memory/' + id, 'DELETE');
+  await api('/memory', 'POST', {category, key, value});
+  $('mem-key').value = '';
+  $('mem-val').value = '';
   loadMemory();
 }
 
-// ── STATS ──
-async function loadStats() {
-  const s = await api('/stats');
-  if (s.messages !== undefined) {
-    $('stat-msgs').textContent = s.messages;
-    $('stat-tasks').textContent = s.tasks;
-    $('stat-done').textContent = s.tasks_done;
-    $('stat-mem').textContent = s.memories;
-  }
+async function deleteMemory(category, key) {
+  await api('/memory', 'DELETE', {category, key});
+  loadMemory();
 }
 
-// ── SETTINGS ──
+// ─────────────────────────────────────────────
+// STATS
+// ─────────────────────────────────────────────
+async function loadStats() {
+  const s = await api('/stats');
+  $('stat-msgs').textContent = s.messages;
+  $('stat-tasks').textContent = s.tasks;
+  $('stat-done').textContent = s.tasks_done;
+  $('stat-mem').textContent = s.memories;
+}
+
+// ─────────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────────
 async function saveApiKey() {
   showToast('Para definir a API key, configura a variável ANTHROPIC_API_KEY no servidor (ver guia de instalação)', 'error');
 }
@@ -812,42 +1229,53 @@ async function changePassword() {
   const current = $('pw-current').value;
   const newpw = $('pw-new').value;
   const res = await api('/change-password', 'POST', {current, new: newpw});
-  if (res.ok) { showToast('Password alterada!'); $('pw-current').value = ''; $('pw-new').value = ''; }
-  else showToast(res.error || 'Erro', 'error');
+  if (res.ok) {
+    showToast('Password alterada!');
+    $('pw-current').value = '';
+    $('pw-new').value = '';
+  } else {
+    showToast(res.error || 'Erro', 'error');
+  }
 }
 
-
-
-// ── Email Analysis ──
+// ─────────────────────────────────────────────
+// EMAIL ANALYSIS MODAL
+// ─────────────────────────────────────────────
 function showEmailModal() {
-  const modal = document.getElementById('email-modal');
+  const modal = $('email-modal');
   modal.style.display = 'flex';
+
+  // preencher email guardado
+  const saved = localStorage.getItem('nexus_email') || "sergioworkprt@gmail.com";
+  $('notify-email').value = saved;
 }
 
 async function submitEmailAnalysis() {
-  const email = document.getElementById('notify-email').value.trim();
-  const prompt = document.getElementById('notify-prompt').value.trim();
-  const status = document.getElementById('email-status');
-  
+  const email = $('notify-email').value.trim();
+  const prompt = $('notify-prompt').value.trim();
+  const status = $('email-status');
+
   if (!email || !prompt) {
     status.textContent = '⚠️ Preenche o email e o que queres analisar';
     status.style.color = 'var(--red)';
     return;
   }
-  
+
+  // guardar email
+  localStorage.setItem('nexus_email', email);
+
   status.textContent = '⏳ A analisar... pode demorar 1-2 minutos...';
   status.style.color = 'var(--amber)';
-  
+
   try {
     const res = await api('/notify-analysis', 'POST', {email, prompt});
     if (res.ok) {
       status.textContent = '✅ Análise concluída! Email enviado para ' + email;
       status.style.color = 'var(--green)';
-      // Also show in chat
       addMessage('user', prompt, true);
       addMessage('assistant', res.response, true);
       setTimeout(() => {
-        document.getElementById('email-modal').style.display = 'none';
+        $('email-modal').style.display = 'none';
         status.textContent = '';
       }, 3000);
     } else {
@@ -860,25 +1288,30 @@ async function submitEmailAnalysis() {
   }
 }
 
-// ── Web Search ──
+// ─────────────────────────────────────────────
+// WEB SEARCH
+// ─────────────────────────────────────────────
 async function doWebSearch() {
-  const q = document.getElementById('web-search-input').value.trim();
+  const q = $('web-search-input').value.trim();
   if (!q) return;
-  document.getElementById('web-search-input').value = '';
-  const msg = 'Pesquisa na web: ' + q;
-  document.getElementById('chat-input').value = msg;
+  $('web-search-input').value = '';
+  $('chat-input').value = 'Pesquisa na web: ' + q;
   sendMessage();
 }
 
-// ── YouTube Analysis ──
+// ─────────────────────────────────────────────
+// YOUTUBE ANALYSIS
+// ─────────────────────────────────────────────
 async function doYouTube() {
   const url = prompt('Cola o link do vídeo YouTube:');
   if (!url) return;
-  document.getElementById('chat-input').value = 'Analisa este vídeo YouTube e resume o conteúdo principal: ' + url;
+  $('chat-input').value = 'Analisa este vídeo YouTube e resume o conteúdo principal: ' + url;
   sendMessage();
 }
 
-// ── PWA Service Worker ──
+// ─────────────────────────────────────────────
+// PWA SERVICE WORKER
+// ─────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/static/sw.js')
@@ -887,13 +1320,15 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// ── PWA Install Button ──
+// ─────────────────────────────────────────────
+// PWA INSTALL BUTTON
+// ─────────────────────────────────────────────
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredPrompt = e;
-  const btn = document.getElementById('install-btn');
-  if (btn) { btn.style.display = 'flex'; }
+  const btn = $('install-btn');
+  if (btn) btn.style.display = 'flex';
 });
 
 async function installApp() {
@@ -909,27 +1344,34 @@ async function installApp() {
 
 window.addEventListener('appinstalled', () => {
   showToast('NEXUS instalada com sucesso! 🎉');
-  const btn = document.getElementById('install-btn');
+  const btn = $('install-btn');
   if (btn) btn.style.display = 'none';
 });
-
 </script>
 
-<!-- Email Analysis Modal -->
+<!-- EMAIL MODAL -->
 <div id="email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center">
   <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:2rem;width:90%;max-width:500px">
     <h3 style="margin-bottom:1rem;color:var(--accent2)">📧 Analisar e Notificar por Email</h3>
     <p style="font-size:0.8rem;color:var(--text2);margin-bottom:1rem">A NEXUS faz a análise e envia-te o resultado por email quando terminar.</p>
+
     <label style="font-size:0.75rem;color:var(--text3)">O TEU EMAIL</label>
-    <input type="email" id="notify-email" placeholder="sergio@gmail.com" style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none">
+    <input type="email" id="notify-email" placeholder="sergioworkprt@gmail.com"
+      style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none">
+
     <label style="font-size:0.75rem;color:var(--text3)">O QUE QUERES ANALISAR</label>
-    <textarea id="notify-prompt" rows="5" placeholder="Ex: Analisa estes vídeos sobre investimento e cria um plano para mim:&#10;https://youtube.com/..." style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none;resize:vertical"></textarea>
+    <textarea id="notify-prompt" rows="5" placeholder="Ex: Analisa estes vídeos sobre investimento e cria um plano para mim:&#10;https://youtube.com/..."
+      style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none;resize:vertical"></textarea>
+
     <div style="display:flex;gap:10px">
       <button onclick="submitEmailAnalysis()" class="btn-primary" style="flex:1;padding:0.75rem">🚀 Analisar e Enviar Email</button>
-      <button onclick="document.getElementById('email-modal').style.display='none'" style="padding:0.75rem 1rem;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer">Cancelar</button>
+      <button onclick="$('email-modal').style.display='none'"
+        style="padding:0.75rem 1rem;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer">Cancelar</button>
     </div>
+
     <div id="email-status" style="margin-top:0.75rem;font-size:0.8rem;text-align:center"></div>
   </div>
 </div>
+
 </body>
 </html>
