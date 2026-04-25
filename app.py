@@ -9,7 +9,12 @@ from functools import wraps
 from flask import Flask, request, jsonify, session, send_from_directory
 
 app = Flask(__name__, static_folder='static')
-app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+# SECRET_KEY deve ser fixo para sessões persistirem entre restarts
+_default_key = 'nexus-secret-key-default-2024-change-this'
+app.secret_key = os.environ.get('SECRET_KEY', _default_key)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False  # True se HTTPS
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 dias
 
 # ── Database ──────────────────────────────────────────────────────────────
 DB_PATH = 'data/agent.db'
@@ -105,6 +110,7 @@ def login():
                       (data.get('username', '').strip(), pw_hash)).fetchone()
     db.close()
     if user:
+        session.permanent = True
         session['user_id'] = user['id']
         session['username'] = user['username']
         return jsonify({'ok': True, 'username': user['username']})
@@ -559,11 +565,12 @@ def change_password():
     if len(new_pw) < 6:
         db.close()
         return jsonify({'error': 'Mínimo 6 caracteres'}), 400
+    new_hash = hashlib.sha256(new_pw.encode()).hexdigest()
     db.execute("UPDATE users SET password_hash=? WHERE id=?",
-               (hashlib.sha256(new_pw.encode()).hexdigest(), session['user_id']))
+               (new_hash, session['user_id']))
     db.commit()
     db.close()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'message': 'Password alterada com sucesso!'})
 
 
 # ── Email Notifications (Gmail SMTP) ─────────────────────────────────────
