@@ -332,7 +332,7 @@ def detect_and_enrich(user_message, messages):
     
     if is_youtube:
         import re
-        urls = re.findall(r'https?://[^\s\)\]"']+', user_message)
+        urls = re.findall(r'https?://[^\s<>"]+', user_message)
         yt_urls = [u for u in urls if 'youtube' in u or 'youtu.be' in u]
         
         if yt_urls:
