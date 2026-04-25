@@ -1311,9 +1311,10 @@ async function doWebSearch() {
 // YOUTUBE ANALYSIS
 // ─────────────────────────────────────────────
 async function doYouTube() {
-  const url = prompt('Cola o link do vídeo YouTube:');
+  const url = prompt('Cola o link do vídeo YouTube:\n(podes colar vários links separados por espaço)');
   if (!url) return;
-  $('chat-input').value = 'Analisa este vídeo YouTube e resume o conteúdo principal: ' + url;
+  showPanel('chat');
+  $('chat-input').value = 'Analisa este(s) vídeo(s) YouTube em profundidade, resume as ideias principais e diz o que é útil para gerar rendimento online. Envia email quando terminares:\n' + url;
   sendMessage();
 }
 
