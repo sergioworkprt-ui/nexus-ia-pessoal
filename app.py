@@ -297,67 +297,24 @@ def extract_video_id(url_or_id):
     return None
 
 def get_youtube_transcript(url_or_id):
-    """Extrai transcrição de vídeo YouTube — múltiplos métodos."""
-    import re
+    """Extrai transcrição usando youtube-transcript-api."""
     video_id = extract_video_id(url_or_id)
     if not video_id:
-        return None, f"Não consegui extrair ID do URL: {url_or_id[:80]}"
-    
-    # Método 1: timedtext API com vários formatos
-    langs = ['pt', 'pt-PT', 'pt-BR', 'en', 'en-US', 'en-GB']
-    for lang in langs:
-        for fmt in ['json3', 'srv3', 'vtt']:
-            try:
-                api_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={lang}&fmt={fmt}&kind=asr"
-                req = urllib.request.Request(api_url, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8'
-                })
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    raw = resp.read().decode('utf-8')
-                    if not raw or raw == '{}' or len(raw) < 20:
-                        continue
-                    if fmt == 'json3':
-                        data = json.loads(raw)
-                        events = data.get('events', [])
-                        text = ' '.join(
-                            seg.get('utf8', '')
-                            for e in events
-                            for seg in e.get('segs', [])
-                            if seg.get('utf8', '').strip()
-                        ).strip()
-                    else:
-                        # Remove tags VTT/SRV
-                        text = re.sub(r'<[^>]+>', '', raw)
-                        text = re.sub(r'\d+:\d+:\d+\.\d+ --> \d+:\d+:\d+\.\d+', '', text)
-                        text = re.sub(r'\n+', ' ', text).strip()
-                    if text and len(text) > 50:
-                        return text[:5000], None
-            except Exception:
-                continue
-    
-    # Método 2: Tentar sem 'kind=asr' (legendas manuais)
-    for lang in ['pt', 'en']:
+        return None, f"ID inválido: {url_or_id[:60]}"
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        # Tenta PT primeiro, depois EN
         try:
-            api_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={lang}&fmt=json3"
-            req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                raw = resp.read().decode('utf-8')
-                if raw and len(raw) > 20:
-                    data = json.loads(raw)
-                    events = data.get('events', [])
-                    text = ' '.join(
-                        seg.get('utf8', '')
-                        for e in events
-                        for seg in e.get('segs', [])
-                        if seg.get('utf8', '').strip()
-                    ).strip()
-                    if text and len(text) > 50:
-                        return text[:5000], None
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['pt', 'pt-PT', 'pt-BR'])
         except Exception:
-            continue
-
-    return None, f"Vídeo {video_id}: sem transcrição disponível (legendas não ativas pelo canal)"
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
+        text = ' '.join([t['text'] for t in transcript_list])
+        return text[:6000], None
+    except Exception as e:
+        err = str(e)
+        if 'No transcripts' in err or 'Could not retrieve' in err:
+            return None, "Este vídeo não tem legendas/transcrição ativadas pelo canal"
+        return None, f"Erro: {err[:120]}"
 
 def detect_and_enrich(user_message, messages):
     """Deteta pedidos de pesquisa web ou YouTube e enriquece o contexto."""
