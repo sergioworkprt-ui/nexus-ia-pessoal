@@ -455,6 +455,19 @@ def change_password():
     db.close()
     return jsonify({'ok': True})
 
+# ── Emergency Reset ───────────────────────────────────────────────────────
+@app.route("/reset/<token>")
+def emergency_reset(token):
+    expected = os.environ.get("RESET_TOKEN", "nexus-reset-2024")
+    if token != expected:
+        return "<h2>Token invalido</h2>", 403
+    try:
+        os.remove(DB_PATH)
+    except Exception:
+        pass
+    init_db()
+    return "<h2>Reset feito! Vai para a NEXUS e faz login.</h2>"
+
 # ── Static ────────────────────────────────────────────────────────────────
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
