@@ -1,0 +1,8 @@
+flask==3.0.3
+gunicorn==22.0.0
+youtube-transcript-api==0.6.2
+
+# ── Whisper (transcrição de áudio) — descomenta se quiseres usar ──────────
+# openai-whisper==20231117
+# yt-dlp==2024.1.1
+# ffmpeg-python==0.2.0
