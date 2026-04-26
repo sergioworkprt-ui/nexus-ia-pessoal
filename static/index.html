@@ -1414,31 +1414,6 @@ window.addEventListener('appinstalled', () => {
   const btn = $('install-btn');
   if (btn) btn.style.display = 'none';
 });
-</script>
-
-<!-- EMAIL MODAL -->
-<div id="email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:2rem;width:90%;max-width:500px">
-    <h3 style="margin-bottom:1rem;color:var(--accent2)">📧 Analisar e Notificar por Email</h3>
-    <p style="font-size:0.8rem;color:var(--text2);margin-bottom:1rem">A NEXUS faz a análise e envia-te o resultado por email quando terminar.</p>
-
-    <label style="font-size:0.75rem;color:var(--text3)">O TEU EMAIL</label>
-    <input type="email" id="notify-email" placeholder="sergioworkprt@gmail.com"
-      style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none">
-
-    <label style="font-size:0.75rem;color:var(--text3)">O QUE QUERES ANALISAR</label>
-    <textarea id="notify-prompt" rows="5" placeholder="Ex: Analisa estes vídeos sobre investimento e cria um plano para mim:&#10;https://youtube.com/..."
-      style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none;resize:vertical"></textarea>
-
-    <div style="display:flex;gap:10px">
-      <button onclick="submitEmailAnalysis()" class="btn-primary" style="flex:1;padding:0.75rem">🚀 Analisar e Enviar Email</button>
-      <button onclick="$('email-modal').style.display='none'"
-        style="padding:0.75rem 1rem;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer">Cancelar</button>
-    </div>
-
-    <div id="email-status" style="margin-top:0.75rem;font-size:0.8rem;text-align:center"></div>
-  </div>
-</div>
 
 
 // ── PRO FUNCTIONS ──
@@ -1495,6 +1470,33 @@ async function showSchedPrompt() {
 }
 
 async function scheduleTask() { showPanel('logs'); }
+
+</script>
+
+<!-- EMAIL MODAL -->
+<div id="email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:2rem;width:90%;max-width:500px">
+    <h3 style="margin-bottom:1rem;color:var(--accent2)">📧 Analisar e Notificar por Email</h3>
+    <p style="font-size:0.8rem;color:var(--text2);margin-bottom:1rem">A NEXUS faz a análise e envia-te o resultado por email quando terminar.</p>
+
+    <label style="font-size:0.75rem;color:var(--text3)">O TEU EMAIL</label>
+    <input type="email" id="notify-email" placeholder="sergioworkprt@gmail.com"
+      style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none">
+
+    <label style="font-size:0.75rem;color:var(--text3)">O QUE QUERES ANALISAR</label>
+    <textarea id="notify-prompt" rows="5" placeholder="Ex: Analisa estes vídeos sobre investimento e cria um plano para mim:&#10;https://youtube.com/..."
+      style="width:100%;padding:0.65rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;margin:6px 0 12px;outline:none;resize:vertical"></textarea>
+
+    <div style="display:flex;gap:10px">
+      <button onclick="submitEmailAnalysis()" class="btn-primary" style="flex:1;padding:0.75rem">🚀 Analisar e Enviar Email</button>
+      <button onclick="$('email-modal').style.display='none'"
+        style="padding:0.75rem 1rem;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer">Cancelar</button>
+    </div>
+
+    <div id="email-status" style="margin-top:0.75rem;font-size:0.8rem;text-align:center"></div>
+  </div>
+</div>
+
 
 </body>
 </html>
