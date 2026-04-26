@@ -716,6 +716,9 @@ body {
       <div class="nav-icon">📊</div><span>Dashboard</span>
     </div>
 
+    <div class="nav-item" id="nav-logs" onclick="showPanel('logs')">
+      <div class="nav-icon">📋</div><span>Logs</span>
+    </div>
     <div class="nav-item" id="nav-settings" onclick="showPanel('settings')">
       <div class="nav-icon">⚙️</div><span>Configurações</span>
     </div>
@@ -740,13 +743,15 @@ body {
       <div class="panel-header">
         <div>
           <h2>Chat com NEXUS</h2>
-          <p>// modelo: claude-opus-4-5 | memória ativa</p>
+          <p id="mode-indicator">// a carregar...</p>
         </div>
         <button class="btn-danger" onclick="clearHistory()" style="font-size:0.72rem;padding:0.4rem 0.8rem">Limpar</button>
       </div>
 
       <div style="padding:0.5rem 1.5rem 0;display:flex;gap:8px">
-        <input type="text" id="web-search-input" placeholder="🔍 Pesquisar na web..." style="flex:1;padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;font-size:0.82rem;outline:none" onkeydown="if(event.key==='Enter')doWebSearch()">
+        <button onclick="uploadPDF()" style="padding:0.55rem 0.8rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--amber);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer" title="Analisar PDF">📄</button>
+  <button onclick="scheduleTask()" style="padding:0.55rem 0.8rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--cyan);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer" title="Agendar tarefa">⏰</button>
+  <input type="text" id="web-search-input" placeholder="🔍 Pesquisar na web..." style="flex:1;padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;font-size:0.82rem;outline:none" onkeydown="if(event.key==='Enter')doWebSearch()">
         <button onclick="doWebSearch()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">Pesquisar</button>
         <button onclick="doYouTube()" style="padding:0.55rem 1rem;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--red);font-family:Syne,sans-serif;font-size:0.8rem;cursor:pointer">▶ YouTube</button>
       </div>
@@ -831,6 +836,14 @@ body {
             <div class="stat-label">MEMÓRIAS GUARDADAS</div>
             <div class="stat-value" id="stat-mem" style="color:var(--amber)">—</div>
           </div>
+          <div class="stat-card" style="grid-column:span 2">
+            <div class="stat-label">IAs ATIVAS</div>
+            <div id="stat-ais" style="font-size:0.82rem;color:var(--text2);line-height:1.8">—</div>
+          </div>
+          <div class="stat-card" style="grid-column:span 2">
+            <div class="stat-label">MODO DO SERVIDOR</div>
+            <div id="stat-mode" style="font-size:1rem;font-weight:700">—</div>
+          </div>
         </div>
 
         <div class="opportunities-section">
@@ -878,6 +891,34 @@ body {
     </div>
 
     <!-- SETTINGS PANEL -->
+    <!-- Logs & Reports Panel -->
+    <div class="panel" id="panel-logs">
+      <div class="panel-header">
+        <div><h2>Logs & Relatórios</h2><p>// atividade do servidor</p></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-small" onclick="generateReport('daily')" style="background:var(--green);color:var(--bg)">📊 Hoje</button>
+          <button class="btn-small" onclick="generateReport('weekly')" style="background:var(--cyan);color:var(--bg)">📈 Semanal</button>
+          <button class="btn-small" onclick="loadLogs()">↻</button>
+        </div>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+        <div id="report-output" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;font-size:0.82rem;line-height:1.6;white-space:pre-wrap;color:var(--text)"></div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:1rem">
+          <div style="font-size:0.72rem;color:var(--text3);margin-bottom:8px;font-family:Space Mono,monospace">TAREFAS AGENDADAS</div>
+          <div id="scheduled-list"><p style="color:var(--text3);font-size:0.8rem">Sem tarefas agendadas</p></div>
+          <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+            <input type="text" id="sched-title" placeholder="Nome da tarefa" style="flex:1;min-width:120px;padding:0.55rem;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;font-size:0.8rem;outline:none">
+            <input type="datetime-local" id="sched-when" style="padding:0.55rem;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Syne,sans-serif;font-size:0.8rem;outline:none">
+            <button class="btn-small" onclick="showSchedPrompt()">+ Agendar</button>
+          </div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:1rem">
+          <div style="font-size:0.72rem;color:var(--text3);margin-bottom:8px;font-family:Space Mono,monospace">LOGS DO SERVIDOR</div>
+          <pre id="logs-output" style="font-family:Space Mono,monospace;font-size:0.7rem;color:var(--green);white-space:pre-wrap;max-height:300px;overflow-y:auto">A carregar...</pre>
+        </div>
+      </div>
+    </div>
+
     <div class="panel" id="panel-settings">
       <div class="panel-header">
         <div><h2>Configurações</h2><p>// api keys e preferências</p></div>
@@ -912,6 +953,20 @@ body {
           <button class="btn-small" onclick="changePassword()" style="margin-top:0.75rem">Alterar password</button>
         </div>
 
+        <div class="settings-section">
+          <h3>🔐 Segurança Avançada</h3>
+          <div class="settings-row">
+            <label>PIN de autorização</label>
+            <div style="display:flex;gap:8px">
+              <input type="password" id="new-pin" placeholder="mín. 4 dígitos" style="max-width:140px;padding:0.5rem;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Space Mono,monospace;font-size:0.8rem;outline:none">
+              <button class="btn-small" onclick="savePIN()">Guardar PIN</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <label>Impressão digital</label>
+            <button class="btn-small" onclick="registerFingerprint()">📱 Registar</button>
+          </div>
+        </div>
         <div class="settings-section">
           <h3>⚠️ Zona de Perigo</h3>
           <div style="display:flex;gap:10px">
@@ -996,12 +1051,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  $('panel-' + name).classList.add('active');
-  $('nav-' + name).classList.add('active');
+  const panel = document.getElementById('panel-' + name);
+  const nav = document.getElementById('nav-' + name);
+  if (panel) panel.classList.add('active');
+  if (nav) nav.classList.add('active');
   currentPanel = name;
   if (name === 'tasks') loadTasks();
   if (name === 'memory') loadMemory();
   if (name === 'stats') loadStats();
+  if (name === 'logs') loadLogs();
 }
 
 // ─────────────────────────────────────────────
@@ -1381,6 +1439,62 @@ window.addEventListener('appinstalled', () => {
     <div id="email-status" style="margin-top:0.75rem;font-size:0.8rem;text-align:center"></div>
   </div>
 </div>
+
+
+// ── PRO FUNCTIONS ──
+async function updateModeIndicator() {
+  try {
+    const me = await api('/api/me');
+    const el = document.getElementById('mode-indicator');
+    if (!el) return;
+    el.textContent = me.mode === 'paid'
+      ? '// 🟢 MODO PRO | scheduler 24/7 | disco persistente'
+      : '// 🟡 MODO FREE | funcionalidades limitadas';
+    el.style.color = me.mode === 'paid' ? 'var(--green)' : 'var(--amber)';
+  } catch(e) {}
+}
+
+async function loadLogs() {
+  try {
+    const res = await api('/api/logs');
+    const el = document.getElementById('logs-output');
+    if (el) el.textContent = res.logs || 'Sem logs';
+  } catch(e) {}
+  await loadScheduled();
+}
+
+async function generateReport(type) {
+  const el = document.getElementById('report-output');
+  if (el) { el.style.display = 'block'; el.textContent = '⏳ A gerar...'; }
+  const res = await api('/api/report', 'POST', {type});
+  if (el) { el.textContent = res.report || res.error || 'Erro'; el.style.color = res.ok ? 'var(--text)' : 'var(--red)'; }
+}
+
+async function loadScheduled() {
+  try {
+    const res = await api('/api/schedule');
+    const el = document.getElementById('scheduled-list');
+    if (!el) return;
+    if (!Array.isArray(res) || !res.length) { el.innerHTML = '<p style="color:var(--text3);font-size:0.8rem">Sem tarefas agendadas</p>'; return; }
+    el.innerHTML = res.map(t => `<div style="padding:0.5rem 0;border-bottom:1px solid var(--border)"><b style="font-size:0.85rem">${t.title}</b><br><span style="font-size:0.72rem;color:var(--text3)">${t.run_at||''}</span></div>`).join('');
+  } catch(e) {}
+}
+
+async function showSchedPrompt() {
+  const titleEl = document.getElementById('sched-title');
+  const whenEl = document.getElementById('sched-when');
+  if (!titleEl || !whenEl) return;
+  const title = titleEl.value.trim();
+  const when = whenEl.value;
+  if (!title || !when) { showToast('Preenche o nome e a data/hora', 'error'); return; }
+  const promptText = prompt('O que deve fazer a NEXUS nessa altura?');
+  if (!promptText) return;
+  const res = await api('/api/schedule', 'POST', {title, prompt: promptText, run_at: new Date(when).toISOString(), email: ''});
+  if (res.ok) { showToast('✅ ' + res.message); titleEl.value=''; whenEl.value=''; loadScheduled(); }
+  else showToast('Erro: ' + (res.error||'falhou'), 'error');
+}
+
+async function scheduleTask() { showPanel('logs'); }
 
 </body>
 </html>
