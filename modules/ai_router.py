@@ -33,40 +33,62 @@ def _make_request(url, headers, body, timeout=45):
 def _try_gemini(messages, system):
     key = os.environ.get('GEMINI_API_KEY', '')
     if not key: return None, "GEMINI_API_KEY não definida"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
     contents = [{'role': 'user' if m['role']=='user' else 'model',
                  'parts': [{'text': m['content']}]} for m in messages]
-    body = {
-        'system_instruction': {'parts': [{'text': system}]},
-        'contents': contents,
-        'generationConfig': {'maxOutputTokens': 4096, 'temperature': 0.7}
-    }
-    result, err = _make_request(url, {'Content-Type': 'application/json'}, body)
-    if err: return None, f"Gemini: {err}"
-    try: return result['candidates'][0]['content']['parts'][0]['text'], None
-    except: return None, "Gemini: parse error"
+    for model_name in ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={key}"
+        body = {
+            'system_instruction': {'parts': [{'text': system}]},
+            'contents': contents,
+            'generationConfig': {'maxOutputTokens': 4096, 'temperature': 0.7}
+        }
+        result, err = _make_request(url, {'Content-Type': 'application/json'}, body)
+        if err:
+            if '503' in str(err) or '429' in str(err) or '404' in str(err):
+                continue
+            return None, f"Gemini: {err}"
+        try:
+            text = result['candidates'][0]['content']['parts'][0]['text']
+            if text: return text, None
+        except: continue
+    return None, "Gemini: todos os modelos indisponíveis"
 
 def _try_groq(messages, system):
     key = os.environ.get('GROQ_API_KEY', '')
     if not key: return None, "GROQ_API_KEY não definida"
     headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'}
     msgs = [{'role': 'system', 'content': system}] + messages
-    body = {'model': 'llama3-70b-8192', 'messages': msgs, 'max_tokens': 4096, 'temperature': 0.7}
-    result, err = _make_request("https://api.groq.com/openai/v1/chat/completions", headers, body)
-    if err: return None, f"Groq: {err}"
-    try: return result['choices'][0]['message']['content'], None
-    except: return None, "Groq: parse error"
+    # Try multiple Groq models in case one is unavailable
+    for model in ['llama-3.3-70b-versatile', 'llama3-70b-8192', 'llama3-8b-8192', 'gemma2-9b-it']:
+        body = {'model': model, 'messages': msgs, 'max_tokens': 4096, 'temperature': 0.7}
+        result, err = _make_request("https://api.groq.com/openai/v1/chat/completions", headers, body)
+        if err:
+            if '403' in str(err) or '401' in str(err):
+                return None, f"Groq: chave inválida (403)"
+            continue
+        try:
+            text = result['choices'][0]['message']['content']
+            if text: return text, None
+        except: continue
+    return None, "Groq: todos os modelos falharam"
 
 def _try_cerebras(messages, system):
     key = os.environ.get('CEREBRAS_API_KEY', '')
     if not key: return None, "CEREBRAS_API_KEY não definida"
     headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'}
     msgs = [{'role': 'system', 'content': system}] + messages
-    body = {'model': 'llama-3.3-70b', 'messages': msgs, 'max_tokens': 4096, 'temperature': 0.7}
-    result, err = _make_request("https://api.cerebras.ai/v1/chat/completions", headers, body)
-    if err: return None, f"Cerebras: {err}"
-    try: return result['choices'][0]['message']['content'], None
-    except: return None, "Cerebras: parse error"
+    for model in ['llama-3.3-70b', 'llama3.1-70b', 'llama3.1-8b']:
+        body = {'model': model, 'messages': msgs, 'max_tokens': 4096, 'temperature': 0.7}
+        result, err = _make_request("https://api.cerebras.ai/v1/chat/completions", headers, body)
+        if err:
+            if '403' in str(err) or '401' in str(err):
+                return None, f"Cerebras: chave inválida (403)"
+            continue
+        try:
+            text = result['choices'][0]['message']['content']
+            if text: return text, None
+        except: continue
+    return None, "Cerebras: todos os modelos falharam"
 
 def _try_openrouter(messages, system):
     key = os.environ.get('OPENROUTER_API_KEY', '')
