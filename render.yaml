@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: nexus-ia-pessoal
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --keep-alive 5
+    envVars:
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: GMAIL_ADDRESS
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: XTB_ACCOUNT_ID
+        sync: false
+      - key: XTB_PASSWORD
+        sync: false
+      - key: XTB_MODE
+        value: demo
+      - key: USER_PHONE
+        sync: false
+      - key: TEXTBELT_KEY
+        value: textbelt
+      - key: WHISPER_ENABLED
+        value: "false"
+      - key: RESET_TOKEN
+        sync: false
+    disk:
+      name: nexus-data
+      mountPath: /data
+      sizeGB: 1
+    healthCheckPath: /api/heartbeat
