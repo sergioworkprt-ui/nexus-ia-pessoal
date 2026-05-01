@@ -259,11 +259,20 @@ def test_security(r: TestResult, db_path):
 # ── Tests: Financial ───────────────────────────────────────────────────────
 def test_financial(r: TestResult, db_path):
     try:
+        import sqlite3
         from modules.financial import (get_financial_config, save_financial_config,
                                         analyze_investment_plan, DEFAULT_CONFIG)
 
-        # Test 1: config padrão
-        config = get_financial_config(1, db_path)
+        TEST_UID = 9999  # utilizador isolado — nunca existe na DB real
+
+        # Limpa estado anterior do utilizador de teste
+        conn = sqlite3.connect(db_path)
+        conn.execute("DELETE FROM memory WHERE user_id=?", (TEST_UID,))
+        conn.commit()
+        conn.close()
+
+        # Test 1: config padrão (utilizador sem config guardada → defaults)
+        config = get_financial_config(TEST_UID, db_path)
         if config.get('max_loss_per_trade') == DEFAULT_CONFIG['max_loss_per_trade']:
             r.ok("financial: config padrão carregada")
         else:
@@ -271,15 +280,15 @@ def test_financial(r: TestResult, db_path):
 
         # Test 2: save e reload config
         config['max_loss_per_trade'] = 7.5
-        save_financial_config(1, db_path, config)
-        config2 = get_financial_config(1, db_path)
+        save_financial_config(TEST_UID, db_path, config)
+        config2 = get_financial_config(TEST_UID, db_path)
         if config2.get('max_loss_per_trade') == 7.5:
             r.ok("financial: save/reload config")
         else:
             r.fail("financial: save/reload", f"got {config2.get('max_loss_per_trade')}")
 
         # Test 3: análise de investimento - ativo protegido
-        config3 = get_financial_config(1, db_path)
+        config3 = get_financial_config(TEST_UID, db_path)
         result = analyze_investment_plan(config3, 'SELL', 'SPY', 10)
         if not result.get('allowed') or result.get('risk_level') == 'blocked':
             r.ok("financial: SPY protegido contra venda")
