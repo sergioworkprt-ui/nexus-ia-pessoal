@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Anti-cache: garante que o browser descarrega sempre a versão mais recente após deploy -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>NEXUS – IA Pessoal</title>
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#7c6fff">
@@ -1826,9 +1830,25 @@ async function doYouTube() {
 // ─────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/static/sw.js')
-      .then(reg => console.log('SW registado:', reg.scope))
-      .catch(err => console.log('SW erro:', err));
+    // ?v= força o browser a re-descarregar sw.js após cada deploy
+    navigator.serviceWorker.register('/static/sw.js?v=20250501')
+      .then(reg => {
+        console.log('[NEXUS] SW registado:', reg.scope);
+        // Verifica atualização do SW em cada carregamento de página
+        reg.update();
+        // Quando um novo SW fica ativo, recarrega a página automaticamente
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+              console.log('[NEXUS] SW atualizado — a recarregar...');
+              window.location.reload();
+            }
+          });
+        });
+      })
+      .catch(err => console.log('[NEXUS] SW erro:', err));
   });
 }
 

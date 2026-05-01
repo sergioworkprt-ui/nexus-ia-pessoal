@@ -36,6 +36,19 @@ app = Flask(__name__, static_folder='static')
 app.secret_key = os.environ.get('SECRET_KEY', 'nexus-default-key-change-this')
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=30)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB uploads
+# Desativa cache do Flask para ficheiros estáticos (por defeito é 12h)
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
+@app.after_request
+def set_cache_headers(response):
+    path = request.path
+    # HTML, raiz e API: nunca cachear
+    if (path == '/' or path.endswith('.html') or
+            path.startswith('/api/') or path.endswith('sw.js')):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma']  = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 # ── Import modules ────────────────────────────────────────────────────────
 from modules.database import init_db, get_db
