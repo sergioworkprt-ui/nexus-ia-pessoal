@@ -45,7 +45,7 @@ def make_test_db():
     """Cria base de dados temporária para testes."""
     tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
     tmp.close()
-    conn = sqlite3.connect(tmp.name)
+    conn = sqlite3.connect(tmp.name, timeout=30)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY, username TEXT, password_hash TEXT,

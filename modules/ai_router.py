@@ -126,19 +126,18 @@ def _try_openrouter(messages, system):
     msgs = [{'role': 'system', 'content': system}] + [
            {'role': m['role'], 'content': m['content']} for m in messages]
 
-    # Modelos pequenos primeiro — maior disponibilidade no free tier
-    # (modelos grandes têm quota mais esgotada)
+    # Modelos com endpoints ativos no OpenRouter (verificado 2025)
     models = [
-        'mistralai/mistral-7b-instruct:free',
-        'meta-llama/llama-3.2-3b-instruct:free',
+        'deepseek/deepseek-chat-v3-0324:free',
+        'deepseek/deepseek-r1:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
         'meta-llama/llama-3.1-8b-instruct:free',
-        'microsoft/phi-3-mini-128k-instruct:free',
+        'qwen/qwen-2.5-72b-instruct:free',
         'qwen/qwen-2.5-7b-instruct:free',
         'google/gemini-2.0-flash-exp:free',
-        'meta-llama/llama-3.3-70b-instruct:free',
-        'qwen/qwen-2.5-72b-instruct:free',
+        'microsoft/phi-3-medium-128k-instruct:free',
         'nousresearch/hermes-3-llama-3.1-405b:free',
-        'openchat/openchat-7b:free',
+        'mistralai/mistral-7b-instruct:free',
     ]
     errors = []
 
@@ -356,15 +355,16 @@ def reload_and_validate():
 # ── Router principal ───────────────────────────────────────────────────────────
 def get_ai_response(messages, memory_context=''):
     """
-    Ordem: Gemini → OpenRouter → Mistral → Groq → Cerebras
-    Os dois últimos falham rápido no Render Free (Cloudflare) mas estão no fim.
+    Ordem: Mistral → OpenRouter → Gemini → Groq → Cerebras
+    Mistral primeiro porque tem chave válida e responde bem.
+    Groq/Cerebras estão no fim porque são bloqueados pelo Cloudflare no Render Free.
     Orçamento global de 90s para garantir resposta antes do timeout do gunicorn (120s).
     """
     system    = SYSTEM_PROMPT + (memory_context or '')
     providers = [
-        ('Gemini',     _try_gemini),
-        ('OpenRouter', _try_openrouter),
         ('Mistral',    _try_mistral),
+        ('OpenRouter', _try_openrouter),
+        ('Gemini',     _try_gemini),
         ('Groq',       _try_groq),
         ('Cerebras',   _try_cerebras),
     ]

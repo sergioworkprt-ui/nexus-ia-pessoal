@@ -306,7 +306,7 @@ def execute_command(command, args, user_id, db_path, session_data,
                 run_at = now + datetime.timedelta(hours=1)
 
             import sqlite3
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30)
             import json as _json
             conn.execute(
                 "INSERT INTO tasks (user_id, title, description, status, run_at) VALUES (?,?,?,?,?)",
@@ -524,7 +524,7 @@ def execute_command(command, args, user_id, db_path, session_data,
         elif command == 'show_tasks':
             import sqlite3
             try:
-                conn = sqlite3.connect(db_path)
+                conn = sqlite3.connect(db_path, timeout=30)
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     "SELECT * FROM tasks WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (user_id,)

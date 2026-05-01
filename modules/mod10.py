@@ -18,7 +18,7 @@ _mod10_state = {}
 def save_state(db_path, key, value, category='mod10'):
     """Guarda estado persistente — usa tabela dedicada para evitar conflitos."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         # Usa tabela própria para estado do sistema
         conn.execute("""
             CREATE TABLE IF NOT EXISTS system_state (
@@ -46,7 +46,7 @@ def save_state(db_path, key, value, category='mod10'):
 def load_state(db_path, key, category='mod10', default=None):
     """Carrega estado persistente da tabela system_state."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("""
             CREATE TABLE IF NOT EXISTS system_state (
@@ -79,7 +79,7 @@ def build_context_snapshot(db_path, user_id, ai_fn=None):
     Útil para continuar projetos após reset ou nova sessão.
     """
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
 
         # Últimas conversas
@@ -167,7 +167,7 @@ SNAPSHOT: {snapshot.get('timestamp', 'desconhecido')}
 def learn_from_logs(db_path, user_id, ai_fn):
     """Aprende com logs de auditoria, erros e operações."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
 
         # Erros recentes
@@ -496,7 +496,7 @@ class Mod10Scheduler:
         """Guarda snapshot de contexto."""
         try:
             import sqlite3
-            conn = sqlite3.connect(self._db_path)
+            conn = sqlite3.connect(self._db_path, timeout=30)
             users = conn.execute("SELECT DISTINCT user_id FROM conversations").fetchall()
             conn.close()
             for (uid,) in users:
@@ -508,7 +508,7 @@ class Mod10Scheduler:
         """Executa ciclo de aprendizagem."""
         try:
             import sqlite3
-            conn = sqlite3.connect(self._db_path)
+            conn = sqlite3.connect(self._db_path, timeout=30)
             users = conn.execute("SELECT DISTINCT user_id FROM conversations").fetchall()
             conn.close()
             for (uid,) in users:

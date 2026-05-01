@@ -343,7 +343,7 @@ def _log_order(user_id, db_path, symbol, cmd, amount_eur, price, mode, result, e
     """Regista ordem no histórico."""
     if not db_path: return
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS xtb_orders (
                 id INTEGER PRIMARY KEY, user_id INTEGER,
@@ -449,7 +449,7 @@ def close_position(token, order_id, symbol, volume, price, mode='demo'):
 def get_xtb_orders_history(user_id, db_path, limit=20):
     """Histórico de ordens."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM xtb_orders WHERE user_id=? ORDER BY id DESC LIMIT ?",

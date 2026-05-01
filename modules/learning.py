@@ -9,7 +9,7 @@ logger = logging.getLogger('nexus.learning')
 def analyze_conversation_patterns(user_id, db_path, ai_fn):
     """Analisa padrões nas conversas e sugere melhorias."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
 
         # Últimas 50 mensagens do utilizador
@@ -70,7 +70,7 @@ Responde de forma concisa e orientada a ação."""
 def save_learning_insight(user_id, db_path, insight_type, content):
     """Guarda um insight de aprendizagem."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS learning_insights (
                 id INTEGER PRIMARY KEY,
@@ -94,7 +94,7 @@ def save_learning_insight(user_id, db_path, insight_type, content):
 def get_learning_history(user_id, db_path):
     """Retorna histórico de aprendizagem."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM learning_insights WHERE user_id=? ORDER BY id DESC LIMIT 20",

@@ -85,7 +85,7 @@ def audit_log(user_id, action_type, description, db_path, level=1, result='ok', 
     """Regista todas as ações sensíveis."""
     try:
         import sqlite3
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY,
@@ -114,7 +114,7 @@ def get_audit_logs(user_id, db_path, limit=50):
     """Retorna logs de auditoria do utilizador."""
     try:
         import sqlite3
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM audit_log WHERE user_id=? ORDER BY id DESC LIMIT ?",

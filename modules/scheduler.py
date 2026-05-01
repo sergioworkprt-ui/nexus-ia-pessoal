@@ -34,9 +34,8 @@ class Scheduler:
     def check_and_run(self):
         if not self._db_path: return
         try:
-            import sqlite3
-            conn = sqlite3.connect(self._db_path)
-            conn.row_factory = sqlite3.Row
+            from modules.database import get_db
+            conn = get_db(self._db_path)
             now = datetime.datetime.now().isoformat()
             tasks = conn.execute(
                 "SELECT * FROM tasks WHERE status='scheduled' AND run_at <= ?", (now,)
@@ -88,8 +87,8 @@ class Scheduler:
         if not title or not prompt or not run_at:
             return {'error': 'title, prompt e run_at obrigatórios'}
         try:
-            import sqlite3
-            conn = sqlite3.connect(db_path or self._db_path)
+            from modules.database import get_db
+            conn = get_db(db_path or self._db_path)
             desc = json.dumps({'prompt': prompt, 'email': email})
             conn.execute(
                 "INSERT INTO tasks (user_id, title, description, status, run_at, email) VALUES (?, ?, ?, 'scheduled', ?, ?)",
@@ -104,9 +103,8 @@ class Scheduler:
 
     def list_tasks(self, user_id):
         try:
-            import sqlite3
-            conn = sqlite3.connect(self._db_path)
-            conn.row_factory = sqlite3.Row
+            from modules.database import get_db
+            conn = get_db(self._db_path)
             rows = conn.execute(
                 "SELECT * FROM tasks WHERE user_id=? AND status='scheduled' ORDER BY run_at",
                 (user_id,)
