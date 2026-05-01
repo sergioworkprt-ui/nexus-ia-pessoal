@@ -167,13 +167,10 @@ def chat():
     pending = session.get('pending_command')
     if pending and AUTH_PHRASE.upper() in user_message.upper():
         # Execute the pending command
-        import asyncio
-        loop = asyncio.new_event_loop()
-        cmd_response = loop.run_until_complete(execute_command(
+        cmd_response = execute_command(
             pending['command'], pending['args'], user_id, DB_PATH,
             dict(session), get_ai_response, send_email
-        ))
-        loop.close()
+        )
         session.pop('pending_command', None)
         audit_log(user_id, 'CMD_EXECUTED', pending['command'], DB_PATH,
                   level=pending['risk'], result='ok')
@@ -188,13 +185,10 @@ def chat():
         command, args, risk = parse_command(user_message)
         if command and risk == 1:
             # Info command — execute immediately
-            import asyncio
-            loop = asyncio.new_event_loop()
-            ai_response = loop.run_until_complete(execute_command(
+            ai_response = execute_command(
                 command, args, user_id, DB_PATH,
                 dict(session), get_ai_response, send_email
-            ))
-            loop.close()
+            )
             model_used = 'commands'
         elif command and needs_authorization(risk):
             # Store pending command and ask for authorization
