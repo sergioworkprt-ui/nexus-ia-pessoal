@@ -112,8 +112,8 @@ def _try_groq(messages, system):
     headers  = {'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'}
     msgs     = [{'role': 'system', 'content': system}] + [
                 {'role': m['role'], 'content': m['content']} for m in messages]
-    models   = ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile',
-                'llama3-70b-8192', 'llama3-8b-8192', 'mixtral-8x7b-32768']
+    models   = ['llama-3.3-70b-versatile', 'llama3-70b-8192',
+                'llama3-8b-8192', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
     last_err = "sem modelos tentados"
 
     for model in models:

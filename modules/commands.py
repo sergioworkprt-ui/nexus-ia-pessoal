@@ -490,6 +490,67 @@ def execute_command(command, args, user_id, db_path, session_data,
             except Exception as e:
                 return f"❌ Erro: {str(e)[:150]}"
 
+        elif command == 'show_portfolio':
+            from modules.financial import get_portfolio_summary
+            try:
+                summary = get_portfolio_summary(user_id, db_path)
+                ops = summary.get('operations', [])
+                total = summary.get('total_invested', 0)
+                profit = summary.get('total_profit', 0)
+                if not ops:
+                    return "📊 **Portfolio vazio.** Regista operações em 💹 Finanças → Registar Operação."
+                lines = [f"📊 **Portfolio ({len(ops)} operações):**\n",
+                         f"• Investido: {total:.2f}€",
+                         f"• Resultado: {'+'if profit>=0 else ''}{profit:.2f}€\n"]
+                for op in ops[:8]:
+                    lines.append(f"• {op.get('asset','?')} {op.get('op_type','?')} — {op.get('result',0):.2f}€")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"❌ Erro ao carregar portfolio: {str(e)[:100]}"
+
+        elif command == 'show_alerts':
+            from modules.market_monitor import get_recent_alerts
+            try:
+                alerts = get_recent_alerts(user_id, db_path)
+                if not alerts:
+                    return "📡 **Sem alertas recentes.** O monitor está ativo e a vigiar os ativos."
+                lines = [f"🔔 **Alertas recentes ({len(alerts)}):**\n"]
+                for a in alerts[:10]:
+                    lines.append(f"• {a.get('symbol','?')}: {a.get('message','')[:80]}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"❌ Erro: {str(e)[:100]}"
+
+        elif command == 'show_tasks':
+            import sqlite3
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT * FROM tasks WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (user_id,)
+                ).fetchall()
+                conn.close()
+                if not rows:
+                    return "📋 **Sem tarefas.** Cria tarefas no painel 📋 Tarefas."
+                lines = [f"📋 **Tarefas ({len(rows)}):**\n"]
+                for r in rows:
+                    status_icon = {'done':'✅','pending':'⏳','scheduled':'⏰','error':'❌'}.get(r['status'],'•')
+                    lines.append(f"{status_icon} {r['title'][:60]}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"❌ Erro: {str(e)[:100]}"
+
+        elif command == 'show_logs':
+            import os
+            try:
+                data_dir = '/data' if os.path.exists('/data') else 'data'
+                log_file = f'{data_dir}/logs/nexus.log'
+                with open(log_file, 'r') as f:
+                    lines = f.readlines()[-20:]
+                return "📄 **Últimas 20 linhas de log:**\n```\n" + "".join(lines)[-1200:] + "\n```"
+            except Exception:
+                return "📄 Sem logs disponíveis neste momento."
+
         elif command == 'enable_monitor':
             return (
                 "📡 **Monitor 24/7 ativo** (já estava a correr).\n\n"

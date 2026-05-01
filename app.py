@@ -166,73 +166,72 @@ def chat():
 
     # ── CHAT COMMANDS ENGINE ──────────────────────────────────────────────
     # Check for pending authorization
-    pending = session.get('pending_command')
-    if pending and AUTH_PHRASE.upper() in user_message.upper():
-        # Execute the pending command
-        import asyncio
-        loop = asyncio.new_event_loop()
-        cmd_response = loop.run_until_complete(execute_command(
-            pending['command'], pending['args'], user_id, DB_PATH,
-            dict(session), get_ai_response, send_email
-        ))
-        loop.close()
-        session.pop('pending_command', None)
-        audit_log(user_id, 'CMD_EXECUTED', pending['command'], DB_PATH,
-                  level=pending['risk'], result='ok')
-        ai_response = "✅ **Autorizado e executado:**\n\n" + str(cmd_response)
-        model_used = 'commands'
-    elif pending and 'NÃO' in user_message.upper():
-        session.pop('pending_command', None)
-        ai_response = "❌ Comando cancelado."
-        model_used = 'commands'
-    else:
-        # Try to detect a new command
-        command, args, risk = parse_command(user_message)
-        if command and risk == 1:
-            # Info command — execute immediately
-            import asyncio
-            loop = asyncio.new_event_loop()
-            ai_response = loop.run_until_complete(execute_command(
-                command, args, user_id, DB_PATH,
+    try:
+        pending = session.get('pending_command')
+        if pending and AUTH_PHRASE.upper() in user_message.upper():
+            cmd_response = execute_command(
+                pending['command'], pending['args'], user_id, DB_PATH,
                 dict(session), get_ai_response, send_email
-            ))
-            loop.close()
+            )
+            session.pop('pending_command', None)
+            audit_log(user_id, 'CMD_EXECUTED', pending['command'], DB_PATH,
+                      level=pending['risk'], result='ok')
+            ai_response = "✅ **Autorizado e executado:**\n\n" + str(cmd_response)
             model_used = 'commands'
-        elif command and needs_authorization(risk):
-            # Store pending command and ask for authorization
-            session['pending_command'] = {'command': command, 'args': args, 'risk': risk}
-            ai_response = format_command_response(command, args, risk, True)
+        elif pending and 'NÃO' in user_message.upper():
+            session.pop('pending_command', None)
+            ai_response = "❌ Comando cancelado."
             model_used = 'commands'
         else:
-            # Normal AI chat
-            # Enriquece com contexto (YouTube, web search, etc.)
-            extra = detect_and_enrich(user_message, DB_PATH, user_id)
-            if extra:
-                messages[-1]['content'] += extra
+            # Try to detect a new command
+            command, args, risk = parse_command(user_message)
+            if command and risk == 1:
+                # Info command — execute immediately
+                ai_response = execute_command(
+                    command, args, user_id, DB_PATH,
+                    dict(session), get_ai_response, send_email
+                )
+                model_used = 'commands'
+            elif command and needs_authorization(risk):
+                # Store pending command and ask for authorization
+                session['pending_command'] = {'command': command, 'args': args, 'risk': risk}
+                ai_response = format_command_response(command, args, risk, True)
+                model_used = 'commands'
+            else:
+                # Normal AI chat
+                extra = detect_and_enrich(user_message, DB_PATH, user_id)
+                if extra:
+                    messages[-1]['content'] += extra
 
-            # Carrega memória do utilizador
-            db = get_db(DB_PATH)
-            memories = db.execute(
-                "SELECT category, key, value FROM memory WHERE user_id=?", (user_id,)
-            ).fetchall()
-            db.close()
+                db = get_db(DB_PATH)
+                memories = db.execute(
+                    "SELECT category, key, value FROM memory WHERE user_id=?", (user_id,)
+                ).fetchall()
+                db.close()
 
-            memory_ctx = ""
-            if memories:
-                memory_ctx = "\n\nMEMÓRIA DO UTILIZADOR:\n"
-                for m in memories:
-                    memory_ctx += f"  [{m['category']}] {m['key']}: {m['value']}\n"
+                memory_ctx = ""
+                if memories:
+                    memory_ctx = "\n\nMEMÓRIA DO UTILIZADOR:\n"
+                    for m in memories:
+                        memory_ctx += f"  [{m['category']}] {m['key']}: {m['value']}\n"
 
-            ai_response, model_used = get_ai_response(messages, memory_ctx)
+                ai_response, model_used = get_ai_response(messages, memory_ctx)
+
+    except Exception as e:
+        logger.error(f"Chat handler error: {e}", exc_info=True)
+        return jsonify({'response': f'⚠️ Erro interno: {str(e)[:200]}', 'model': 'error'}), 200
 
     # Guarda resposta
-    db = get_db(DB_PATH)
-    db.execute(
-        "INSERT INTO conversations (user_id, role, content, model_used) VALUES (?, 'assistant', ?, ?)",
-        (user_id, ai_response, model_used)
-    )
-    db.commit()
-    db.close()
+    try:
+        db = get_db(DB_PATH)
+        db.execute(
+            "INSERT INTO conversations (user_id, role, content, model_used) VALUES (?, 'assistant', ?, ?)",
+            (user_id, ai_response, model_used)
+        )
+        db.commit()
+        db.close()
+    except Exception as e:
+        logger.error(f"Chat save error: {e}")
 
     logger.info(f"Chat [{model_used}] user={user_id} chars={len(ai_response)}")
 

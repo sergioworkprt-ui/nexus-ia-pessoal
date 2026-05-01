@@ -1413,10 +1413,16 @@ body {
 // API WRAPPER
 // ─────────────────────────────────────────────
 async function api(url, method = 'GET', data = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const opts = { method, credentials: 'include', headers: { 'Content-Type': 'application/json' } };
   if (data) opts.body = JSON.stringify(data);
-  const res = await fetch(url, opts);
-  return res.json();
+  try {
+    const res = await fetch(url, opts);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return { error: `Resposta inválida (${res.status})` };
+    return res.json();
+  } catch(e) {
+    return { error: 'Erro de rede: ' + e.message };
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1442,7 +1448,7 @@ async function doLogin() {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'flex';
     $('sidebar-user').textContent = res.username;
-    loadHistory(); loadStats();
+    loadHistory(); loadStats(); updateModeIndicator(); startHeartbeat();
   } else {
     $('login-err').textContent = res.error || 'Erro de login';
   }
@@ -1464,11 +1470,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const me = await api('/api/me');
-  if (me.username) {
+  if (me && me.username) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'flex';
     $('sidebar-user').textContent = me.username;
-    loadHistory(); loadStats();
+    loadHistory(); loadStats(); updateModeIndicator(); startHeartbeat();
   }
 });
 
@@ -1577,22 +1583,23 @@ async function sendMessage() {
   addMessage('user', msg, true);
   showTyping();
 
-  // detectar intenção de email
   const notify = detectEmailIntent(msg);
+  const email = localStorage.getItem('nexus_email') || '';
 
-  // enviar email guardado
-  const email = localStorage.getItem('nexus_email') || "sergioworkprt@gmail.com";
-
-  const res = await api('/api/chat', 'POST', {
-    message: msg,
-    notify,
-    email
-  });
-
-  const typing = $('typing-indicator');
-  if (typing) typing.remove();
-
-  addMessage('assistant', res.response || res.error || 'Erro', true);
+  try {
+    const res = await api('/api/chat', 'POST', { message: msg, notify, email });
+    const typing = $('typing-indicator');
+    if (typing) typing.remove();
+    if (res.error && !res.response) {
+      addMessage('assistant', '⚠️ ' + res.error, true);
+    } else {
+      addMessage('assistant', res.response || res.error || '⚠️ Sem resposta', true);
+    }
+  } catch(e) {
+    const typing = $('typing-indicator');
+    if (typing) typing.remove();
+    addMessage('assistant', '⚠️ Erro de ligação. Tenta novamente.', true);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1712,11 +1719,14 @@ async function deleteMemory(category, key) {
 // STATS
 // ─────────────────────────────────────────────
 async function loadStats() {
-  const s = await api('/api/stats');
-  $('stat-msgs').textContent = s.messages;
-  $('stat-tasks').textContent = s.tasks;
-  $('stat-done').textContent = s.tasks_done;
-  $('stat-mem').textContent = s.memories;
+  try {
+    const s = await api('/api/stats');
+    if (!s || s.error) return;
+    if ($('stat-msgs')) $('stat-msgs').textContent = s.messages ?? '-';
+    if ($('stat-tasks')) $('stat-tasks').textContent = s.tasks ?? '-';
+    if ($('stat-done')) $('stat-done').textContent = s.tasks_done ?? '-';
+    if ($('stat-mem')) $('stat-mem').textContent = s.memories ?? '-';
+  } catch(e) {}
 }
 
 // ─────────────────────────────────────────────
