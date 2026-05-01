@@ -34,7 +34,7 @@ def _get_key(env_var):
     """Lê SEMPRE do os.environ — sem cache."""
     return os.environ.get(env_var, '').strip()
 
-def _make_request(url, headers, body, timeout=45):
+def _make_request(url, headers, body, timeout=12):
     data = json.dumps(body).encode('utf-8')
     req  = urllib.request.Request(url, data=data, headers=headers, method='POST')
     try:
@@ -123,9 +123,7 @@ def _try_groq(messages, system):
         if err:
             last_err = f"{model}: {err}"
             logger.debug(f"Groq {model}: {err}")
-            if _should_continue(err):
-                continue  # CORRECÇÃO: era 'return None, chave inválida'
-            break
+            continue
         try:
             text = result['choices'][0]['message']['content']
             if text:
@@ -154,9 +152,7 @@ def _try_cerebras(messages, system):
         if err:
             last_err = f"{model}: {err}"
             logger.debug(f"Cerebras {model}: {err}")
-            if _should_continue(err):
-                continue  # CORRECÇÃO: era 'return None, chave inválida'
-            break
+            continue
         try:
             text = result['choices'][0]['message']['content']
             if text:
@@ -281,8 +277,15 @@ def get_ai_response(messages, memory_context=''):
         ('OpenRouter', _try_openrouter),
         ('Mistral',    _try_mistral),
     ]
-    errors = []
+    errors  = []
+    # Orçamento global de 90s — evita exceder o timeout do gunicorn (120s)
+    deadline = time.time() + 90
+
     for name, fn in providers:
+        if time.time() > deadline:
+            logger.warning(f"Router: orçamento de 90s esgotado antes de tentar {name}")
+            errors.append(f"{name}: orçamento de tempo esgotado")
+            break
         try:
             response, err = fn(messages, system)
         except Exception as e:
