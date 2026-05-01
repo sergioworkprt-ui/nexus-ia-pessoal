@@ -49,10 +49,8 @@ from modules.security import (audit_log, check_action_allowed, detect_emergency_
     get_audit_logs, classify_action_level, is_emergency_stopped)
 from modules.financial import (get_financial_config, save_financial_config,
     log_operation, get_portfolio_summary, analyze_investment_plan, fact_check_investment_claim)
-from modules.learning import (analyze_conversation_patterns, compare_sources,
-    generate_improvement_plan, investment_education, get_learning_history)
 from modules.xtb import (xtb_login, get_account_info, get_positions, place_order,
-    close_position, get_symbol_price, get_xtb_orders_history)
+    get_symbol_price, get_xtb_orders_history)
 from modules.market_monitor import (market_monitor, get_monitor_config, save_monitor_config,
     load_watched_assets, save_watched_assets, get_recent_alerts, get_asset_price,
     check_all_assets, MODE_ASK, MODE_AUTO)
