@@ -34,6 +34,7 @@ Idioma: SEMPRE Português de Portugal.
 Tom: direto, prático, orientado a resultados."""
 
 _last_validation = {}
+_last_used_provider = None
 
 def _get_key(env_var):
     return os.environ.get(env_var, '').strip()
@@ -305,6 +306,44 @@ def get_validation_status():
         }
     return status
 
+def get_router_status():
+    """Full status dict for the /api/status endpoint."""
+    key_map = {
+        'gemini':     'GEMINI_API_KEY',
+        'openrouter': 'OPENROUTER_API_KEY',
+        'mistral':    'MISTRAL_API_KEY',
+        'groq':       'GROQ_API_KEY',
+        'cerebras':   'CEREBRAS_API_KEY',
+    }
+    providers = {}
+    for name, env_var in key_map.items():
+        key    = _get_key(env_var)
+        cached = _last_validation.get(name, {})
+        note   = ' ⚠️ bloqueado Cloudflare no Render' if name in ('groq', 'cerebras') else ''
+        providers[name] = {
+            'key_set':        bool(key),
+            'key_prefix':     (key[:12] + '...') if key else 'NOT SET',
+            'last_ok':        cached.get('ok'),
+            'last_status':    cached.get('status', 'não testado') + note,
+            'last_ms':        cached.get('ms', 0),
+            'last_tested_ts': cached.get('ts'),
+            'quota_exceeded': False,
+            'quota_reset_in': 0,
+        }
+    active = [n for n, v in providers.items() if v['key_set']]
+    return {
+        'providers':        providers,
+        'mode':             _last_used_provider,
+        'fallback_active':  bool(_last_used_provider and _last_used_provider.lower() not in ('gemini', 'none')),
+        'active_providers': active,
+        'quota_saver_mode': False,
+        'recent_errors':    [],
+        'timestamps': {
+            'server_time':     time.time(),
+            'server_time_iso': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        },
+    }
+
 def reload_and_validate():
     _last_validation.clear()
     results = {}
@@ -346,6 +385,8 @@ def get_ai_response(messages, memory_context=''):
 
         if response:
             logger.info(f"AI response via {name} ({len(response)} chars)")
+            global _last_used_provider
+            _last_used_provider = name
             return response, name
 
         errors.append(f"{name}: {err}")

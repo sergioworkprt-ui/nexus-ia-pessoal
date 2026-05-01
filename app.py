@@ -52,7 +52,7 @@ def set_cache_headers(response):
 
 # ── Import modules ────────────────────────────────────────────────────────
 from modules.database import init_db, get_db
-from modules.ai_router import get_ai_response
+from modules.ai_router import get_ai_response, get_router_status, reload_and_validate
 from modules.email_sender import send_email
 from modules.youtube import get_youtube_transcript
 from modules.scheduler import scheduler
@@ -141,6 +141,16 @@ def me():
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat():
+    try:
+        return _chat_inner()
+    except Exception as e:
+        logger.exception(f"Chat unhandled exception: {e}")
+        return jsonify({
+            'response': f'⚠️ Erro interno do servidor: {str(e)[:200]}\n\nTenta novamente ou usa `recarregar ia`.',
+            'model': 'error'
+        }), 200
+
+def _chat_inner():
     from modules.enricher import detect_and_enrich
     data = request.json or {}
     user_message = data.get('message', '').strip()
@@ -162,13 +172,9 @@ def chat():
         sec_emergency_resume(user_id, DB_PATH)
 
     db = get_db(DB_PATH)
-
-    # Guarda mensagem do utilizador
     db.execute("INSERT INTO conversations (user_id, role, content) VALUES (?, 'user', ?)",
                (user_id, user_message))
     db.commit()
-
-    # Carrega histórico (últimas 20 mensagens)
     history = db.execute(
         "SELECT role, content FROM conversations WHERE user_id=? ORDER BY id DESC LIMIT 20",
         (user_id,)
@@ -176,9 +182,10 @@ def chat():
     db.close()
 
     messages = [{'role': r['role'], 'content': r['content']} for r in reversed(history)]
+    if not messages:
+        messages = [{'role': 'user', 'content': user_message}]
 
     # ── CHAT COMMANDS ENGINE ──────────────────────────────────────────────
-    # Check for pending authorization
     try:
         pending = session.get('pending_command')
         if pending and AUTH_PHRASE.upper() in user_message.upper():
@@ -196,24 +203,20 @@ def chat():
             ai_response = "❌ Comando cancelado."
             model_used = 'commands'
         else:
-            # Try to detect a new command
             command, args, risk = parse_command(user_message)
             if command and risk == 1:
-                # Info command — execute immediately
                 ai_response = execute_command(
                     command, args, user_id, DB_PATH,
                     dict(session), get_ai_response, send_email
                 )
                 model_used = 'commands'
             elif command and needs_authorization(risk):
-                # Store pending command and ask for authorization
                 session['pending_command'] = {'command': command, 'args': args, 'risk': risk}
                 ai_response = format_command_response(command, args, risk, True)
                 model_used = 'commands'
             else:
-                # Normal AI chat
                 extra = detect_and_enrich(user_message, DB_PATH, user_id)
-                if extra:
+                if extra and messages:
                     messages[-1]['content'] += extra
 
                 db = get_db(DB_PATH)
@@ -234,7 +237,6 @@ def chat():
         logger.error(f"Chat handler error: {e}", exc_info=True)
         return jsonify({'response': f'⚠️ Erro interno: {str(e)[:200]}', 'model': 'error'}), 200
 
-    # Guarda resposta
     try:
         db = get_db(DB_PATH)
         db.execute(
@@ -248,7 +250,6 @@ def chat():
 
     logger.info(f"Chat [{model_used}] user={user_id} chars={len(ai_response)}")
 
-    # Auto-email se pedido (só para respostas de chat normal)
     if model_used != 'commands':
         email_triggers = ['envia email', 'manda email', 'notifica', 'avisa-me', 'envia-me']
         if any(t in user_message.lower() for t in email_triggers):
@@ -1130,6 +1131,25 @@ def xtb_monitor_check():
         'errors': [e for e in [err2, err3] if e]
     })
 
+
+
+# ── STATUS ENDPOINT ────────────────────────────────────────────────────────
+@app.route('/api/status', methods=['GET'])
+@login_required
+def api_status():
+    """AI router status: providers, mode, recent errors, quotas, timestamps."""
+    status = get_router_status()
+    status['nexus_mode'] = 'paid' if IS_PAID else 'free'
+    status['scheduler_running'] = scheduler.is_running()
+    status['emergency_stopped'] = is_emergency_stopped()
+    return jsonify(status)
+
+@app.route('/api/status/reload', methods=['POST'])
+@login_required
+def api_status_reload():
+    """Clears quota cooldowns and re-validates all providers (makes real API calls)."""
+    results = reload_and_validate()
+    return jsonify({'ok': True, 'results': results})
 
 
 # ── DEBUG ENDPOINT (diagnóstico de API keys) ──────────────────────────────

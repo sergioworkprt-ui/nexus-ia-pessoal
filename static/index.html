@@ -771,7 +771,10 @@ body {
           <h2>Chat com NEXUS</h2>
           <p id="mode-indicator">// a carregar...</p>
         </div>
-        <button class="btn-danger" onclick="clearHistory()" style="font-size:0.72rem;padding:0.4rem 0.8rem">Limpar</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="showAIStatus()" style="font-size:0.72rem;padding:0.4rem 0.8rem;background:rgba(124,111,255,0.15);border:1px solid rgba(124,111,255,0.4);border-radius:8px;color:var(--primary);cursor:pointer;font-family:Syne,sans-serif">📊 status ia</button>
+          <button class="btn-danger" onclick="clearHistory()" style="font-size:0.72rem;padding:0.4rem 0.8rem">Limpar</button>
+        </div>
       </div>
 
       <div style="padding:0.5rem 1.5rem 0;display:flex;gap:8px">
@@ -1421,12 +1424,44 @@ async function api(url, method = 'GET', data = null) {
   if (data) opts.body = JSON.stringify(data);
   try {
     const res = await fetch(url, opts);
-    const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) return { error: `Resposta inválida (${res.status})` };
-    return res.json();
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch(_) {
+      return {
+        error: `Resposta inválida do servidor (HTTP ${res.status})`,
+        response: `⚠️ Erro ${res.status}: o servidor devolveu uma resposta inesperada. Tenta novamente.`
+      };
+    }
   } catch(e) {
-    return { error: 'Erro de rede: ' + e.message };
+    return { error: 'Erro de rede: ' + e.message, response: '⚠️ Sem ligação ao servidor. Verifica a tua ligação e tenta novamente.' };
   }
+}
+
+async function showAIStatus() {
+  const res = await api('/api/status');
+  if (res.error && !res.providers) {
+    addMessage('assistant', '⚠️ Não foi possível obter o status: ' + res.error, true);
+    return;
+  }
+  const p = res.providers || {};
+  const lines = ['📊 **Status dos Providers IA:**\n'];
+  const icons = { true: '✅', false: '❌', null: '⚪', undefined: '⚪' };
+  for (const [name, info] of Object.entries(p)) {
+    const icon = icons[info.last_ok];
+    const quota = info.quota_exceeded ? ` ⏳ quota (reset em ${info.quota_reset_in}s)` : '';
+    lines.push(`${icon} **${name}**: chave=${info.key_set ? 'SET' : 'NOT SET'} | ${info.last_status} | ${info.last_ms}ms${quota}`);
+  }
+  lines.push('');
+  lines.push(`**Modo atual:** ${res.mode || 'desconhecido'} | **Fallback:** ${res.fallback_active ? 'SIM ⚠️' : 'NÃO ✅'}`);
+  lines.push(`**NEXUS:** ${res.nexus_mode === 'paid' ? 'PRO 24/7' : 'FREE'} | **Scheduler:** ${res.scheduler_running ? 'ativo' : 'parado'}`);
+  if (res.recent_errors && res.recent_errors.length) {
+    lines.push('\n**Últimos erros:**');
+    res.recent_errors.slice(-3).forEach(e => lines.push(`• [${e.provider}] ${e.error}`));
+  }
+  lines.push('\n💡 Para re-testar: escreve `recarregar ia`');
+  addMessage('assistant', lines.join('\n'), true);
+  showPanel('chat');
 }
 
 // ─────────────────────────────────────────────
