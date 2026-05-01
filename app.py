@@ -50,7 +50,7 @@ from modules.security import (audit_log, check_action_allowed, detect_emergency_
 from modules.financial import (get_financial_config, save_financial_config,
     log_operation, get_portfolio_summary, analyze_investment_plan, fact_check_investment_claim)
 from modules.xtb import (xtb_login, get_account_info, get_positions, place_order,
-    get_symbol_price, get_xtb_orders_history)
+    get_xtb_orders_history)
 from modules.market_monitor import (market_monitor, get_monitor_config, save_monitor_config,
     load_watched_assets, save_watched_assets, get_recent_alerts, get_asset_price,
     check_all_assets, MODE_ASK, MODE_AUTO)
@@ -672,7 +672,7 @@ def xtb_account():
     session_data, err = xtb_login()
     if err:
         return jsonify({'error': err}), 400
-    info, err2 = get_account_info(session_data['token'])
+    info, err2 = get_account_info(session_data)
     if err2:
         return jsonify({'error': err2}), 400
     audit_log(session['user_id'], 'XTB_ACCOUNT_QUERY', 'Consulta de saldo', DB_PATH, level=2)
@@ -691,7 +691,7 @@ def xtb_positions():
         os.environ.get('XTB_MODE','demo')
     )
     if err: return jsonify({'error': err}), 400
-    positions, err2 = get_positions(session_data['token'])
+    positions, err2 = get_positions(session_data)
     audit_log(session['user_id'], 'XTB_POSITIONS_QUERY', 'Consulta posições', DB_PATH, level=2)
     return jsonify({'positions': positions, 'error': err2})
 
@@ -1058,8 +1058,8 @@ def xtb_monitor_check():
     if err:
         return jsonify({'error': err, 'mode': mode}), 400
 
-    positions, err2 = get_positions(session_data['token'])
-    account, err3 = get_account_info(session_data['token'])
+    positions, err2 = get_positions(session_data)
+    account, err3 = get_account_info(session_data)
 
     # Cache das posições
     from modules.mod10 import save_state

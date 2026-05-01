@@ -28,11 +28,15 @@ def _has_websocket():
 
 # ── WebSocket Client ─────────────────────────────────────────────────────
 def _ws_command(ws_url, command_dict, timeout=20):
-    """Envia um comando via WebSocket e retorna a resposta."""
+    """Envia um único comando via WebSocket e retorna a resposta."""
     try:
         import websocket
         result = [None]
         error  = [None]
+        payload = command_dict if isinstance(command_dict, str) else json.dumps(command_dict)
+
+        def on_open(ws):
+            ws.send(payload)
 
         def on_message(ws, msg):
             try:
@@ -47,6 +51,7 @@ def _ws_command(ws_url, command_dict, timeout=20):
 
         ws = websocket.WebSocketApp(
             ws_url,
+            on_open=on_open,
             on_message=on_message,
             on_error=on_error
         )
@@ -56,7 +61,6 @@ def _ws_command(ws_url, command_dict, timeout=20):
         t.daemon = True
         t.start()
 
-        # Aguarda ligação e envia comando
         deadline = time.time() + timeout
         while t.is_alive() and result[0] is None and error[0] is None:
             if time.time() > deadline:
