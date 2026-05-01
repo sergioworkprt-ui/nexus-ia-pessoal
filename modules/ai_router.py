@@ -60,7 +60,6 @@ def _make_request(url, headers, body, timeout=12):
         return None, f"ERROR: {str(e)[:80]}"
 
 # ── Gemini ────────────────────────────────────────────────────────────────────
-# Modelos disponíveis na v1beta (gemini-1.5-pro foi removido)
 def _try_gemini(messages, system):
     key = _get_key('GEMINI_API_KEY')
     if not key: return None, "GEMINI_API_KEY não definida"
@@ -72,7 +71,6 @@ def _try_gemini(messages, system):
     if not contents or contents[0]['role'] != 'user':
         contents.insert(0, {'role': 'user', 'parts': [{'text': 'Olá'}]})
 
-    # gemini-2.0-flash-lite é mais rápido e tem rate limit mais alto no free tier
     models = [
         'gemini-2.0-flash-lite',
         'gemini-2.0-flash',
@@ -93,6 +91,11 @@ def _try_gemini(messages, system):
         if err:
             errors.append(f"{model_name}: {err}")
             logger.debug(f"Gemini {model_name}: {err}")
+            # Quota esgotada (429) é por projeto, não por modelo —
+            # tentar outros modelos da mesma chave é inútil; sai imediatamente
+            if '429' in str(err) and ('quota' in str(err).lower() or 'exceeded' in str(err).lower()):
+                logger.warning("Gemini: cota diária esgotada — a saltar para próximo provider")
+                break
             continue
         try:
             text = result['candidates'][0]['content']['parts'][0]['text']
@@ -103,12 +106,12 @@ def _try_gemini(messages, system):
             errors.append(f"{model_name}: parse {e}")
             continue
 
-    # Mostra os primeiros 2 erros para diagnóstico
-    summary = ' | '.join(errors[:2]) + (f' (+{len(errors)-2} mais)' if len(errors) > 2 else '')
-    return None, f"Gemini: {summary}"
+    first = errors[0] if errors else "sem erro"
+    tail  = f' (+{len(errors)-1} mais)' if len(errors) > 1 else ''
+    return None, f"Gemini: {first}{tail}"
 
 # ── OpenRouter ────────────────────────────────────────────────────────────────
-# Modelos gratuitos funcionais em Mai/2025 — testados no Render
+# Lista ampla para máxima cobertura — modelos menores são mais disponíveis
 def _try_openrouter(messages, system):
     key = _get_key('OPENROUTER_API_KEY')
     if not key: return None, "OPENROUTER_API_KEY não definida"
@@ -122,13 +125,19 @@ def _try_openrouter(messages, system):
     msgs = [{'role': 'system', 'content': system}] + [
            {'role': m['role'], 'content': m['content']} for m in messages]
 
+    # Modelos pequenos primeiro — maior disponibilidade no free tier
+    # (modelos grandes têm quota mais esgotada)
     models = [
-        'meta-llama/llama-3.3-70b-instruct:free',
-        'deepseek/deepseek-r1-distill-llama-70b:free',
-        'google/gemini-2.0-flash-exp:free',
         'mistralai/mistral-7b-instruct:free',
         'meta-llama/llama-3.2-3b-instruct:free',
+        'meta-llama/llama-3.1-8b-instruct:free',
+        'microsoft/phi-3-mini-128k-instruct:free',
+        'qwen/qwen-2.5-7b-instruct:free',
+        'google/gemini-2.0-flash-exp:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
         'qwen/qwen-2.5-72b-instruct:free',
+        'nousresearch/hermes-3-llama-3.1-405b:free',
+        'openchat/openchat-7b:free',
     ]
     errors = []
 
@@ -137,7 +146,7 @@ def _try_openrouter(messages, system):
         result, err = _make_request(
             'https://openrouter.ai/api/v1/chat/completions', headers, body)
         if err:
-            errors.append(f"{model}: {err}")
+            errors.append(f"{model.split('/')[-1]}: {err[:80]}")
             logger.debug(f"OpenRouter {model}: {err}")
             continue
         try:
@@ -146,11 +155,12 @@ def _try_openrouter(messages, system):
                 logger.info(f"OpenRouter OK: {model}")
                 return text, None
         except Exception as e:
-            errors.append(f"{model}: parse {e}")
+            errors.append(f"{model.split('/')[-1]}: parse {e}")
             continue
 
-    summary = ' | '.join(errors[:2]) + (f' (+{len(errors)-2} mais)' if len(errors) > 2 else '')
-    return None, f"OpenRouter: {summary}"
+    first = errors[0] if errors else "sem resposta"
+    tail  = f' (+{len(errors)-1} mais)' if len(errors) > 1 else ''
+    return None, f"OpenRouter: {first}{tail}"
 
 # ── Mistral ───────────────────────────────────────────────────────────────────
 def _try_mistral(messages, system):
@@ -341,34 +351,42 @@ def get_ai_response(messages, memory_context=''):
         errors.append(f"{name}: {err}")
         logger.debug(f"Router [{name}] failed: {err}")
 
-    # Todos falharam — mensagem de diagnóstico útil
-    gemini_key = bool(_get_key('GEMINI_API_KEY'))
-    or_key     = bool(_get_key('OPENROUTER_API_KEY'))
-    missing    = []
-    if not gemini_key:  missing.append('`GEMINI_API_KEY`')
-    if not or_key:      missing.append('`OPENROUTER_API_KEY`')
+    # Todos falharam — analisa os erros e dá diagnóstico acionável
+    all_errors_str = ' '.join(errors)
+    gemini_quota   = '429' in all_errors_str and ('quota' in all_errors_str.lower() or 'exceeded' in all_errors_str.lower())
+    gemini_key     = bool(_get_key('GEMINI_API_KEY'))
+    or_key         = bool(_get_key('OPENROUTER_API_KEY'))
 
-    lines = ["⚠️ **Nenhuma IA respondeu neste momento.**\n"]
+    lines = ["⚠️ **Nenhuma IA respondeu agora.**\n"]
 
-    if missing:
-        lines.append(f"**Chaves em falta no Render → Environment:** {', '.join(missing)}")
-        lines.append("Sem pelo menos uma dessas chaves o chat não funciona.\n")
+    # Diagnóstico específico por causa
+    if gemini_quota and gemini_key:
+        lines.append(
+            "**🔴 Causa principal: Cota Gemini esgotada (HTTP 429)**\n"
+            "A cota diária gratuita do Gemini é de ~1500 pedidos/dia por projeto.\n"
+            "Quando esgota, todos os modelos do mesmo API key falham.\n\n"
+            "**Solução imediata (2 opções):**\n"
+            "1. ⏳ **Aguarda** até à meia-noite (hora de Lisboa) — a cota reinicia automaticamente\n"
+            "2. 💳 **Ativa faturação** em https://aistudio.google.com → a cota sobe para ~60k/dia "
+            "e os primeiros $10/mês são gratuitos (custo real: ~$0.001 por mensagem)\n"
+        )
 
-    lines.append("**Erros detalhados:**")
-    for e in errors:
-        # Simplifica erros de Cloudflare
-        if '1010' in e or 'Cloudflare' in e:
-            provider = e.split(':')[0]
-            lines.append(f"• {provider}: ❌ bloqueado por Cloudflare (normal no Render Free)")
-        else:
-            lines.append(f"• {e[:120]}")
+    if not gemini_key:
+        lines.append("❌ `GEMINI_API_KEY` não definida no Render → Environment\n")
+    if not or_key:
+        lines.append("❌ `OPENROUTER_API_KEY` não definida no Render → Environment\n")
+
+    # Resumo dos erros (compacto)
+    relevant = [e for e in errors if '1010' not in e and 'Cloudflare' not in e]
+    if relevant:
+        lines.append("**Erros (resumo):**")
+        for e in relevant[:3]:
+            lines.append(f"• {e[:100]}")
 
     lines.append(
-        "\n**Como resolver:**\n"
-        "1. Confirma que `GEMINI_API_KEY` está definida no Render → Environment\n"
-        "2. Confirma que `OPENROUTER_API_KEY` está definida\n"
-        "3. Groq/Cerebras não funcionam no Render Free (bloqueio Cloudflare) — ignora esses erros\n"
-        "4. Escreve `recarregar ia` para testar de novo após corrigir as chaves"
+        "\n**Enquanto a cota não reinicia:**\n"
+        "• Os comandos internos continuam a funcionar (mostra limites, liga xtb, etc.)\n"
+        "• Escreve `recarregar ia` depois de corrigir para testar de novo"
     )
 
     logger.error(f"All providers failed: {errors}")
