@@ -389,6 +389,63 @@ def get_symbol_price(symbol):
         return None, f"Preço {symbol}: {str(e)[:100]}"
 
 
+def close_position(token, order_id, symbol, volume, price, mode='demo'):
+    """Fecha uma posição aberta via WebSocket XTB."""
+    if not _has_websocket():
+        return None, "❌ websocket-client não instalado — fechar posições impossível"
+
+    if isinstance(token, dict):
+        ws_token  = token.get('token', '')
+        ws_url    = XTB_WS_DEMO if token.get('mode', 'demo') == 'demo' else XTB_WS_REAL
+        simulated = token.get('simulated', False)
+    else:
+        ws_url    = XTB_WS_DEMO if mode == 'demo' else XTB_WS_REAL
+        ws_token  = token
+        simulated = False
+
+    if simulated:
+        return {
+            'closed': True,
+            'order_id': order_id,
+            'symbol': symbol,
+            'volume': volume,
+            'price': price,
+            'simulated': True
+        }, None
+
+    close_cmd = json.dumps({
+        "command": "tradeTransaction",
+        "arguments": {
+            "tradeTransInfo": {
+                "cmd": 2,
+                "order": order_id,
+                "symbol": symbol,
+                "volume": volume,
+                "price": price,
+                "type": 2,
+                "comment": f"NEXUS CLOSE {mode.upper()}"
+            }
+        },
+        "streamSessionId": ws_token
+    })
+
+    result_data, err = _ws_command(ws_url, close_cmd)
+
+    if err:
+        return None, err
+    if result_data and result_data.get('status'):
+        closed_order = result_data.get('returnData', {}).get('order', order_id)
+        return {
+            'closed': True,
+            'order_id': closed_order,
+            'symbol': symbol,
+            'volume': volume,
+            'price': price,
+            'mode': mode
+        }, None
+    return None, f"Falha ao fechar posição: {result_data}"
+
+
 def get_xtb_orders_history(user_id, db_path, limit=20):
     """Histórico de ordens."""
     try:
