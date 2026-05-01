@@ -39,7 +39,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB uploads
 
 # ── Import modules ────────────────────────────────────────────────────────
 from modules.database import init_db, get_db
-from modules.ai_router import get_ai_response
+from modules.ai_router import get_ai_response, get_router_status, reload_and_validate
 from modules.email_sender import send_email
 from modules.youtube import get_youtube_transcript
 from modules.scheduler import scheduler
@@ -128,6 +128,16 @@ def me():
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat():
+    try:
+        return _chat_inner()
+    except Exception as e:
+        logger.exception(f"Chat unhandled exception: {e}")
+        return jsonify({
+            'response': f'⚠️ Erro interno do servidor: {str(e)[:200]}\n\nTenta novamente ou usa `recarregar ia`.',
+            'model': 'error'
+        }), 200  # return 200 with error body so the frontend can display it
+
+def _chat_inner():
     from modules.enricher import detect_and_enrich
     data = request.json or {}
     user_message = data.get('message', '').strip()
@@ -163,6 +173,8 @@ def chat():
     db.close()
 
     messages = [{'role': r['role'], 'content': r['content']} for r in reversed(history)]
+    if not messages:
+        messages = [{'role': 'user', 'content': user_message}]
 
     # ── CHAT COMMANDS ENGINE ──────────────────────────────────────────────
     # Check for pending authorization
@@ -207,7 +219,7 @@ def chat():
             # Normal AI chat
             # Enriquece com contexto (YouTube, web search, etc.)
             extra = detect_and_enrich(user_message, DB_PATH, user_id)
-            if extra:
+            if extra and messages:
                 messages[-1]['content'] += extra
 
             # Carrega memória do utilizador
@@ -1118,6 +1130,25 @@ def xtb_monitor_check():
         'errors': [e for e in [err2, err3] if e]
     })
 
+
+
+# ── STATUS ENDPOINT ────────────────────────────────────────────────────────
+@app.route('/api/status', methods=['GET'])
+@login_required
+def api_status():
+    """AI router status: providers, mode, errors, timestamps, quotas."""
+    status = get_router_status()
+    status['nexus_mode'] = 'paid' if IS_PAID else 'free'
+    status['scheduler_running'] = scheduler.is_running()
+    status['emergency_stopped'] = is_emergency_stopped()
+    return jsonify(status)
+
+@app.route('/api/status/reload', methods=['POST'])
+@login_required
+def api_status_reload():
+    """Clears quota cooldowns and re-validates all providers (makes real API calls)."""
+    results = reload_and_validate()
+    return jsonify({'ok': True, 'results': results})
 
 
 # ── DEBUG ENDPOINT (diagnóstico de API keys) ──────────────────────────────

@@ -1413,10 +1413,20 @@ body {
 // API WRAPPER
 // ─────────────────────────────────────────────
 async function api(url, method = 'GET', data = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const opts = { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
   if (data) opts.body = JSON.stringify(data);
-  const res = await fetch(url, opts);
-  return res.json();
+  try {
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (_) {
+      // Server returned non-JSON (e.g. HTML error page)
+      return { error: `Resposta inválida do servidor (HTTP ${res.status})`, response: `⚠️ Erro ${res.status}: o servidor devolveu uma resposta inesperada. Tenta novamente.` };
+    }
+  } catch (e) {
+    return { error: `Erro de rede: ${e.message}`, response: `⚠️ Sem ligação ao servidor: ${e.message}` };
+  }
 }
 
 // ─────────────────────────────────────────────
