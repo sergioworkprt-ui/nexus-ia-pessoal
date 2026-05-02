@@ -9,6 +9,7 @@ Mudanças vs v3:
 """
 import os, json, logging, datetime, sqlite3, time
 from urllib.parse import urlparse
+from modules.database import get_db, safe_close
 logger = logging.getLogger('nexus.xtb')
 
 XTB_WS_DEMO = "wss://ws.xtb.com/demo"
@@ -380,8 +381,9 @@ def close_position(token, order_id, symbol, volume, price, mode='demo'):
 def _log_order(user_id, db_path, symbol, cmd, amount_eur, price, mode, result, error):
     """Regista ordem no histórico."""
     if not db_path: return
+    conn = None
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS xtb_orders (
                 id INTEGER PRIMARY KEY, user_id INTEGER,
@@ -398,9 +400,10 @@ def _log_order(user_id, db_path, symbol, cmd, amount_eur, price, mode, result, e
              json.dumps(result)[:500] if result else '', str(error or '')[:200])
         )
         conn.commit()
-        conn.close()
     except Exception as e:
         logger.error(f"Log order error: {e}")
+    finally:
+        safe_close(conn)
 
 
 def get_symbol_price(symbol):
@@ -429,17 +432,18 @@ def get_symbol_price(symbol):
 
 def get_xtb_orders_history(user_id, db_path, limit=20):
     """Histórico de ordens."""
+    conn = None
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
-        conn.row_factory = sqlite3.Row
+        conn = get_db(db_path)
         rows = conn.execute(
             "SELECT * FROM xtb_orders WHERE user_id=? ORDER BY id DESC LIMIT ?",
             (user_id, limit)
         ).fetchall()
-        conn.close()
         return [dict(r) for r in rows]
     except Exception:
         return []
+    finally:
+        safe_close(conn)
 
 
 def test_connection(mode=None):

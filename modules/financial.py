@@ -1,3 +1,4 @@
+from modules.database import get_db
 """
 NEXUS Financial Module — Sistema financeiro inteligente com limites
 AVISO: Este módulo é educativo e de simulação. Não executa ordens reais.
@@ -31,7 +32,7 @@ RISK_WARNINGS = {
 def get_financial_config(user_id, db_path):
     """Carrega configuração financeira do utilizador."""
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT value FROM memory WHERE user_id=? AND category='financeiro' AND key='config'",
@@ -48,7 +49,7 @@ def get_financial_config(user_id, db_path):
 def save_financial_config(user_id, db_path, config):
     """Guarda configuração financeira."""
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.execute("""
             INSERT INTO memory (user_id, category, key, value, updated_at)
             VALUES (?, 'financeiro', 'config', ?, datetime('now'))
@@ -65,7 +66,7 @@ def save_financial_config(user_id, db_path, config):
 def log_operation(user_id, db_path, op_type, asset, amount, price, result, notes=''):
     """Regista uma operação financeira."""
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS financial_ops (
                 id INTEGER PRIMARY KEY,
@@ -93,7 +94,7 @@ def log_operation(user_id, db_path, op_type, asset, amount, price, result, notes
 def get_portfolio_summary(user_id, db_path):
     """Retorna resumo do portfolio simulado."""
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.row_factory = sqlite3.Row
         ops = conn.execute(
             "SELECT * FROM financial_ops WHERE user_id=? ORDER BY created_at DESC LIMIT 50",

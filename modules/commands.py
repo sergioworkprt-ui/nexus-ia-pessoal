@@ -1,3 +1,4 @@
+from modules.database import get_db
 """
 NEXUS Chat Commands Engine
 Controlo total da NEXUS via chat natural.
@@ -306,7 +307,7 @@ def execute_command(command, args, user_id, db_path, session_data,
                 run_at = now + datetime.timedelta(hours=1)
 
             import sqlite3
-            conn = sqlite3.connect(db_path, timeout=30)
+            conn = get_db(db_path)
             import json as _json
             conn.execute(
                 "INSERT INTO tasks (user_id, title, description, status, run_at) VALUES (?,?,?,?,?)",
@@ -524,7 +525,7 @@ def execute_command(command, args, user_id, db_path, session_data,
         elif command == 'show_tasks':
             import sqlite3
             try:
-                conn = sqlite3.connect(db_path, timeout=30)
+                conn = get_db(db_path)
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     "SELECT * FROM tasks WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (user_id,)

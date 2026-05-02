@@ -51,7 +51,7 @@ def set_cache_headers(response):
     return response
 
 # ── Import modules ────────────────────────────────────────────────────────
-from modules.database import init_db, get_db
+from modules.database import init_db, get_db, ensure_healthy, check_integrity, repair_db, safe_close
 from modules.ai_router import get_ai_response, get_router_status, reload_and_validate
 from modules.email_sender import send_email
 from modules.youtube import get_youtube_transcript
@@ -80,8 +80,17 @@ from modules.mod10 import (mod10, build_context_snapshot, reconstruct_context_pr
 from modules.learning import (analyze_conversation_patterns, compare_sources,
     generate_improvement_plan, investment_education, get_learning_history)
 
-# Inicializa DB e scheduler
+# ── Arranque: verifica saúde da DB antes de tudo ─────────────────────────
+_db_health_ok, _db_health_msg = ensure_healthy(DB_PATH)
+if not _db_health_ok:
+    logger.error(f"DB health check FALHOU: {_db_health_msg} — a forçar reinicialização")
+    repair_db(DB_PATH)
+
 init_db(DB_PATH)
+
+_db_health_ok, _db_health_msg = check_integrity(DB_PATH)
+logger.info(f"DB integrity: {_db_health_msg} | path: {DB_PATH}")
+
 scheduler.start(DB_PATH, get_ai_response, send_email)
 market_monitor.start(DB_PATH, send_email, get_ai_response)
 logger.info("Market Monitor iniciado")
@@ -1139,6 +1148,45 @@ def xtb_monitor_check():
 
 
 # ── STATUS ENDPOINT ────────────────────────────────────────────────────────
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    """Health check público — sem autenticação. Usado por Render e monitores."""
+    import os
+    db_ok, db_detail = check_integrity(DB_PATH)
+    disk_free = None
+    try:
+        st = os.statvfs(DATA_DIR)
+        disk_free = st.f_bavail * st.f_frsize // (1024 * 1024)  # MB
+    except Exception:
+        pass
+    status = 'ok' if db_ok else 'degraded'
+    return jsonify({
+        'status':     status,
+        'db':         db_detail,
+        'db_path':    DB_PATH,
+        'disk_free_mb': disk_free,
+        'mode':       'paid' if IS_PAID else 'free',
+    }), (200 if db_ok else 503)
+
+
+@app.route('/api/db/repair', methods=['POST'])
+@login_required
+def api_db_repair():
+    """Força verificação e reparação da base de dados."""
+    ok, detail = check_integrity(DB_PATH)
+    if ok:
+        return jsonify({'ok': True, 'message': f'DB íntegra: {detail}', 'repaired': False})
+    logger.warning(f"DB repair solicitado — integrity: {detail}")
+    repaired, msg = repair_db(DB_PATH)
+    if repaired:
+        try:
+            init_db(DB_PATH)
+        except Exception as e:
+            return jsonify({'ok': False, 'message': f'repair ok mas init falhou: {e}'}), 500
+    return jsonify({'ok': repaired, 'message': msg, 'repaired': repaired,
+                    'integrity_before': detail})
+
+
 @app.route('/api/status', methods=['GET'])
 @login_required
 def api_status():
@@ -1147,6 +1195,9 @@ def api_status():
     status['nexus_mode'] = 'paid' if IS_PAID else 'free'
     status['scheduler_running'] = scheduler.is_running()
     status['emergency_stopped'] = is_emergency_stopped()
+    db_ok, db_detail = check_integrity(DB_PATH)
+    status['db_ok'] = db_ok
+    status['db_detail'] = db_detail
     return jsonify(status)
 
 @app.route('/api/status/reload', methods=['POST'])

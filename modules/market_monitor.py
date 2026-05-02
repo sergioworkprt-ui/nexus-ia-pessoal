@@ -1,3 +1,4 @@
+from modules.database import get_db
 """
 NEXUS Market Monitor — Monitorização 24/7 de ativos
 Cron jobs, alertas por email/SMS, análise automática.
@@ -74,7 +75,7 @@ def save_watched_assets(user_id, db_path, assets):
     """Guarda lista de ativos vigiados."""
     import sqlite3
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.execute("""
             INSERT INTO memory (user_id, category, key, value, updated_at)
             VALUES (?, 'monitor', 'watched_assets', ?, datetime('now'))
@@ -90,7 +91,7 @@ def load_watched_assets(user_id, db_path):
     """Carrega ativos vigiados do utilizador."""
     import sqlite3
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT value FROM memory WHERE user_id=? AND category='monitor' AND key='watched_assets'",
@@ -119,7 +120,7 @@ def get_monitor_config(user_id, db_path):
         'sms_alerts': False,
     }
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT value FROM memory WHERE user_id=? AND category='monitor' AND key='config'",
@@ -137,7 +138,7 @@ def save_monitor_config(user_id, db_path, config):
     """Guarda configuração de monitorização."""
     import sqlite3
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.execute("""
             INSERT INTO memory (user_id, category, key, value, updated_at)
             VALUES (?, 'monitor', 'config', ?, datetime('now'))
@@ -155,7 +156,7 @@ def save_alert(user_id, db_path, symbol, alert_type, message, price, change_pct)
     """Guarda alerta no histórico."""
     import sqlite3
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS market_alerts (
                 id INTEGER PRIMARY KEY,
@@ -183,7 +184,7 @@ def get_recent_alerts(user_id, db_path, limit=20):
     """Retorna alertas recentes."""
     import sqlite3
     try:
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM market_alerts WHERE user_id=? ORDER BY id DESC LIMIT ?",
@@ -321,7 +322,7 @@ class MarketMonitor:
             return
         import sqlite3
         try:
-            conn = sqlite3.connect(self._db_path, timeout=30)
+            conn = get_db(self._db_path)
             conn.row_factory = sqlite3.Row
             users = conn.execute("SELECT DISTINCT user_id FROM memory WHERE category='monitor'").fetchall()
             conn.close()

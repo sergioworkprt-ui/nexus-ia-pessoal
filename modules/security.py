@@ -1,3 +1,4 @@
+from modules.database import get_db
 """
 NEXUS Security Module — Autorização multinível
 Nível 1: análise/simulação (sem autorização)
@@ -85,7 +86,7 @@ def audit_log(user_id, action_type, description, db_path, level=1, result='ok', 
     """Regista todas as ações sensíveis."""
     try:
         import sqlite3
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY,
@@ -114,7 +115,7 @@ def get_audit_logs(user_id, db_path, limit=50):
     """Retorna logs de auditoria do utilizador."""
     try:
         import sqlite3
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = get_db(db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM audit_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
