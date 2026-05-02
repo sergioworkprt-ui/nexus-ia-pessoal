@@ -2395,7 +2395,11 @@ async function loadXTBAccount() {
   if (!pinOk) return;
   el.textContent = '⏳ A consultar saldo...';
   const r = await api('/api/xtb/account');
-  if (r.error) { el.innerHTML = `<span style="color:var(--red)">❌ ${r.error}</span>`; return; }
+  if (r.error) {
+    const errHtml = r.error.replace(/\n/g, '<br>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    el.innerHTML = `<span style="color:var(--red);line-height:1.6">${errHtml}</span>`;
+    return;
+  }
   el.innerHTML = `<b>Saldo:</b> ${r.balance || 0} ${r.currency || 'EUR'} · <b>Equity:</b> ${r.equity || 0} · <b>Margem livre:</b> ${r.free_margin || 0} · <b>Modo:</b> <span style="color:${r.mode==='real'?'var(--red)':'var(--amber)'}">${(r.mode||'demo').toUpperCase()}</span>`;
 }
 
@@ -2492,9 +2496,20 @@ async function loadXTBStatus() {
   const el = document.getElementById('xtb-status');
   if (!el) return;
   const modeColor = _xtbMode === 'real' ? 'var(--red)' : 'var(--amber)';
-  el.innerHTML = s.configured
-    ? `<b style="color:var(--green)">✅ XTB configurado</b> · Modo: <b style="color:${modeColor}">${_xtbMode.toUpperCase()}</b>`
-    : `<b style="color:var(--red)">❌ XTB não configurado</b> · Adiciona XTB_ACCOUNT_ID e XTB_PASSWORD no Render`;
+
+  let html = '';
+  if (!s.configured) {
+    html = `<b style="color:var(--red)">❌ XTB não configurado</b> · Adiciona <code>XTB_ACCOUNT_ID</code> e <code>XTB_PASSWORD</code> no Render → Environment`;
+  } else {
+    html = `<b style="color:var(--green)">✅ Credenciais OK</b> · Modo: <b style="color:${modeColor}">${_xtbMode.toUpperCase()}</b>`;
+    if (s.proxy_set) {
+      html += ` · 🔀 Proxy: <b style="color:var(--green)">${s.proxy || 'configurado'}</b>`;
+    } else {
+      html += `<br><span style="color:var(--amber);font-size:0.78rem">⚠️ <b>Sem proxy</b> — o XTB bloqueia IPs de datacenter (Render/AWS). ` +
+        `Para ligar, define <code>XTB_PROXY=socks5://user:pass@host:port</code> no Render → Environment.</span>`;
+    }
+  }
+  el.innerHTML = html;
 
   // Update order button and phrase based on mode
   const btn = document.getElementById('xtb-order-btn');
