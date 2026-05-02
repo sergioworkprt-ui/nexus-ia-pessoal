@@ -674,11 +674,16 @@ def xtb_status():
     import os
     has_account = bool(os.environ.get('XTB_ACCOUNT_ID'))
     has_password = bool(os.environ.get('XTB_PASSWORD'))
+    proxy = os.environ.get('XTB_PROXY', '')
+    from urllib.parse import urlparse
+    proxy_host = urlparse(proxy).hostname if proxy else None
     return jsonify({
-        'configured': has_account and has_password,
-        'mode': os.environ.get('XTB_MODE', 'demo'),
+        'configured':  has_account and has_password,
+        'mode':        os.environ.get('XTB_MODE', 'demo'),
         'has_account': has_account,
-        'has_password': has_password
+        'has_password': has_password,
+        'proxy':       proxy_host or None,
+        'proxy_set':   bool(proxy),
     })
 
 @app.route('/api/xtb/account', methods=['GET'])
@@ -692,7 +697,7 @@ def xtb_account():
     session_data, err = xtb_login()
     if err:
         return jsonify({'error': err}), 400
-    info, err2 = get_account_info(session_data['token'])
+    info, err2 = get_account_info(session_data)
     if err2:
         return jsonify({'error': err2}), 400
     audit_log(session['user_id'], 'XTB_ACCOUNT_QUERY', 'Consulta de saldo', DB_PATH, level=2)
@@ -711,7 +716,7 @@ def xtb_positions():
         os.environ.get('XTB_MODE','demo')
     )
     if err: return jsonify({'error': err}), 400
-    positions, err2 = get_positions(session_data['token'])
+    positions, err2 = get_positions(session_data)
     audit_log(session['user_id'], 'XTB_POSITIONS_QUERY', 'Consulta posições', DB_PATH, level=2)
     return jsonify({'positions': positions, 'error': err2})
 
