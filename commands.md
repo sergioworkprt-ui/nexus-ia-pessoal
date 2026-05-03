@@ -251,5 +251,170 @@
 
 ---
 
+---
+
+## Command Layer — Chat Grammar (Natural Language)
+
+The `CommandEngine` in `nexus_commands/` accepts free-form natural-language
+input and maps it to runtime actions without requiring exact syntax.
+
+### Verb vocabulary
+
+| Canonical verb | Accepted synonyms |
+|---|---|
+| `run` | execute, trigger, launch, fire |
+| `show` | display, get, view, fetch, what, what's |
+| `generate` | create, build, export, produce, make |
+| `start` | activate, boot, turn on |
+| `stop` | halt, kill, shutdown, deactivate |
+| `enable` | switch on, activate |
+| `disable` | switch off, turn off, deactivate |
+| `increase` | raise, up, boost, bump, higher |
+| `decrease` | lower, reduce, drop, cut |
+| `set` | change, update, assign, configure, modify |
+| `pause` | freeze, hold, suspend |
+| `resume` | unpause, continue, restore |
+| `reset` | clear, reinit, restart |
+| `list` | ls, all |
+| `check` | verify, validate, inspect, examine |
+
+### Target vocabulary
+
+| Canonical target | Accepted synonyms / shorthands |
+|---|---|
+| `pipeline` | pipelines, pipe — or use the pipeline name directly |
+| `report` | reports |
+| `risk` | drawdown, exposure |
+| `module` | modules, component, subsystem — or use the module name directly |
+| `audit` | audit chain, chain, log, logs |
+| `state` | checkpoint, counters |
+| `evolution` | auto evolution, auto-evolution |
+| `intelligence` | intel, market intelligence |
+| `consensus` | vote, agreement |
+| `financial` | finance, portfolio |
+| `limit` | limits, threshold, parameter — or use limit name directly |
+| `status` | health, overview, info |
+| `history` | runs, executions, recent |
+| `scheduler` | schedule, scheduling |
+
+### Command grammar examples
+
+#### Run
+
+| Natural-language input | Action |
+|---|---|
+| `run pipeline intelligence` | Run the intelligence pipeline |
+| `run intelligence` | Same — shorthand |
+| `run all pipelines` | Run all 5 pipelines |
+| `execute financial` | Run the financial pipeline |
+| `trigger consensus` | Run the consensus pipeline |
+
+#### Show / List
+
+| Natural-language input | Action |
+|---|---|
+| `show status` | Full runtime status |
+| `what is the status` | Same |
+| `list pipeline` | All pipelines with mode and interval |
+| `show module profit_engine` | Health of a specific module |
+| `show risk` | Current risk / alert thresholds |
+| `show audit 20` | Last 20 audit entries |
+| `show history` | Last 10 pipeline run records |
+| `show state` | Cycle count, uptime, last cycle |
+
+#### Generate
+
+| Natural-language input | Action |
+|---|---|
+| `generate report` | Run all pipelines and export report |
+| `generate report financial` | Report scoped to financial pipeline |
+| `generate report financial export reports/live/fin.json` | Same + export to path |
+| `generate checkpoint` | Force a state checkpoint now |
+| `verify audit chain` | Check audit chain integrity |
+
+#### Enable / Disable
+
+| Natural-language input | Action |
+|---|---|
+| `enable module auto_evolution` | Start a stopped module |
+| `disable module web_intelligence` | Stop a module ⚠ confirm |
+| `start pipeline reporting` | Set pipeline mode to enabled |
+| `stop pipeline evolution` | Disable a pipeline ⚠ confirm |
+| `enable evolution` | Allow evolution to apply patches ⚠ confirm |
+| `disable evolution` | Set evolution back to dry-run |
+
+#### Start / Stop Scheduler
+
+| Natural-language input | Action |
+|---|---|
+| `start scheduler` | Enable automatic pipeline scheduling |
+| `stop scheduler` | Pause the scheduler ⚠ confirm |
+| `pause pipeline` | Pause runtime scheduler |
+| `resume pipeline` | Resume paused scheduler |
+
+#### Set / Increase / Decrease Limits
+
+| Natural-language input | Action |
+|---|---|
+| `set limit max_drawdown 0.15` | Set drawdown alert to 15% ⚠ confirm |
+| `set max_drawdown to 0.12` | Same — shorthand |
+| `increase limit sentiment_threshold 0.1` | Raise threshold by 0.1 |
+| `increase sentiment threshold by 10%` | Raise threshold by 10% |
+| `decrease limit sharpe_alert 0.1` | Lower Sharpe alert ⚠ confirm |
+| `increase drawdown 5%` | Raise drawdown limit by 5% |
+
+#### Mutable limits
+
+| Limit name | Aliases | Config section |
+|---|---|---|
+| `max_drawdown_alert` | `max_drawdown`, `drawdown` | `financial` |
+| `sharpe_alert` | `sharpe`, `sharpe_ratio` | `financial` |
+| `sentiment_threshold` | `sentiment` | `intelligence` |
+| `max_urls` | `urls` | `intelligence` |
+| `max_patches_per_cycle` | `patches`, `max_patches` | `evolution` |
+| `n_agents` | `agents` | `consensus` |
+| `agreement_alert` | `agreement` | `consensus` |
+
+### Safe mode
+
+`CommandEngine` starts with `safe_mode=True`. Destructive operations (stop,
+disable, decrease, set, reset) are **blocked** and return a response with
+`requires_confirm=True`. Call `.confirm()` to proceed:
+
+```python
+engine = CommandEngine(runtime, safe_mode=True)
+resp = engine.execute("stop scheduler")
+# resp.requires_confirm == True
+resp = resp.confirm()           # executes the command
+```
+
+Disable safe mode for unattended scripts:
+
+```python
+engine.safe_mode = False
+```
+
+### Python API
+
+```python
+from nexus_commands import CommandEngine
+from nexus_runtime import NexusRuntime
+
+runtime = NexusRuntime.live()
+runtime.start()
+engine  = CommandEngine(runtime)
+
+resp = engine.execute("run pipeline intelligence")
+print(resp)                      # structured CommandResponse
+
+resp = engine.execute("show history 20")
+entries = resp.data["history"]
+
+print(engine.help("show"))       # help for all 'show' commands
+print(engine.help("set limit"))  # help for a specific command
+```
+
+---
+
 *Documentação gerada automaticamente pelo sistema NEXUS.*  
 *Para ajuda detalhada sobre um comando: `nexus help <comando>`*

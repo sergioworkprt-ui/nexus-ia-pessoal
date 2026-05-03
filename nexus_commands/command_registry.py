@@ -1,0 +1,495 @@
+"""
+NEXUS Command Layer — Command Registry
+Stores command definitions: verb/target grammar, parameter schemas,
+confirmation requirements, and help text.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set
+
+
+# ---------------------------------------------------------------------------
+# Grammar constants
+# ---------------------------------------------------------------------------
+
+VERBS: Set[str] = {
+    "run", "show", "generate", "start", "stop",
+    "enable", "disable", "increase", "decrease", "set",
+    "pause", "resume", "reset", "list", "check",
+}
+
+TARGETS: Set[str] = {
+    "pipeline", "report", "risk", "module", "audit",
+    "state", "evolution", "intelligence", "consensus",
+    "financial", "reporting", "scheduler", "limit",
+    "status", "history", "checkpoint",
+}
+
+PIPELINE_NAMES: Set[str] = {
+    "intelligence", "financial", "evolution", "consensus", "reporting",
+}
+
+MODULE_NAMES: Set[str] = {
+    "intelligence", "financial", "evolution", "consensus", "reporting",
+    "profit_engine", "web_intelligence", "auto_evolution", "multi_ia", "reports",
+}
+
+# Verbs that mutate runtime state and require confirmation in safe mode
+DESTRUCTIVE_VERBS: Set[str] = {"stop", "reset", "disable", "decrease", "set"}
+
+# Verbs that read-only and never need confirmation
+SAFE_VERBS: Set[str] = {"show", "list", "check", "generate"}
+
+
+# ---------------------------------------------------------------------------
+# Command definition
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ParamSchema:
+    """Schema for a named parameter accepted by a command."""
+    name:        str
+    type:        str          # "str" | "float" | "int" | "bool" | "percent"
+    required:    bool = False
+    default:     Any  = None
+    description: str  = ""
+    choices:     Optional[List[str]] = None
+
+
+@dataclass
+class CommandDef:
+    """Definition of a single command variant."""
+    verb:          str
+    target:        str
+    handler_key:   str                  # key used to look up handler in engine
+    description:   str
+    params:        List[ParamSchema]    = field(default_factory=list)
+    requires_confirm: bool             = False
+    aliases:       List[str]           = field(default_factory=list)
+    examples:      List[str]           = field(default_factory=list)
+
+    @property
+    def key(self) -> str:
+        return f"{self.verb}:{self.target}"
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+class CommandRegistry:
+    """
+    Stores all registered CommandDefs; exposes lookup by key and fuzzy search.
+
+    Usage:
+        registry = CommandRegistry()
+        registry.register(CommandDef(...))
+        defn = registry.get("run", "pipeline")
+    """
+
+    def __init__(self) -> None:
+        self._commands: Dict[str, CommandDef] = {}
+        self._alias_map: Dict[str, str] = {}
+        self._populate_defaults()
+
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
+    def register(self, defn: CommandDef) -> None:
+        self._commands[defn.key] = defn
+        for alias in defn.aliases:
+            self._alias_map[alias] = defn.key
+
+    def get(self, verb: str, target: str) -> Optional[CommandDef]:
+        key = f"{verb}:{target}"
+        if key in self._commands:
+            return self._commands[key]
+        resolved = self._alias_map.get(key)
+        return self._commands.get(resolved) if resolved else None
+
+    def get_by_key(self, key: str) -> Optional[CommandDef]:
+        return self._commands.get(key) or self._commands.get(self._alias_map.get(key, ""))
+
+    def all(self) -> List[CommandDef]:
+        return list(self._commands.values())
+
+    def for_verb(self, verb: str) -> List[CommandDef]:
+        return [d for d in self._commands.values() if d.verb == verb]
+
+    def for_target(self, target: str) -> List[CommandDef]:
+        return [d for d in self._commands.values() if d.target == target]
+
+    def search(self, query: str) -> List[CommandDef]:
+        """Return commands whose description or key contains the query."""
+        q = query.lower()
+        return [
+            d for d in self._commands.values()
+            if q in d.key or q in d.description.lower()
+        ]
+
+    def help_text(self, verb: Optional[str] = None, target: Optional[str] = None) -> str:
+        """Return formatted help string for a subset or all commands."""
+        if verb and target:
+            defn = self.get(verb, target)
+            if not defn:
+                return f"No command found for '{verb} {target}'."
+            return self._format_one(defn)
+
+        pool = self.for_verb(verb) if verb else (self.for_target(target) if target else self.all())
+        if not pool:
+            return "No matching commands."
+        return "\n".join(self._format_one(d) for d in pool)
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _format_one(self, defn: CommandDef) -> str:
+        lines = [f"  {defn.verb} {defn.target}  —  {defn.description}"]
+        if defn.params:
+            for p in defn.params:
+                req = " (required)" if p.required else ""
+                lines.append(f"    param: {p.name} [{p.type}]{req}  {p.description}")
+        if defn.examples:
+            for ex in defn.examples:
+                lines.append(f"    e.g.: {ex}")
+        if defn.requires_confirm:
+            lines.append("    ⚠  requires confirmation in safe mode")
+        return "\n".join(lines)
+
+    def _populate_defaults(self) -> None:
+        """Register the full built-in command vocabulary."""
+        defs: List[CommandDef] = [
+
+            # ── run ──────────────────────────────────────────────────────────
+            CommandDef(
+                verb="run", target="pipeline",
+                handler_key="run_pipeline",
+                description="Run one or all pipelines immediately.",
+                params=[
+                    ParamSchema("name", "str", required=False,
+                                choices=list(PIPELINE_NAMES),
+                                description="Pipeline name. Omit to run all."),
+                ],
+                examples=[
+                    "run pipeline intelligence",
+                    "run pipeline financial",
+                    "run pipeline",
+                ],
+            ),
+            CommandDef(
+                verb="run", target="intelligence",
+                handler_key="run_pipeline",
+                description="Run the intelligence pipeline.",
+                aliases=["run:intelligence"],
+                examples=["run intelligence"],
+            ),
+            CommandDef(
+                verb="run", target="financial",
+                handler_key="run_pipeline",
+                description="Run the financial pipeline.",
+                examples=["run financial"],
+            ),
+            CommandDef(
+                verb="run", target="evolution",
+                handler_key="run_pipeline",
+                description="Run the evolution pipeline (dry-run by default).",
+                examples=["run evolution"],
+            ),
+            CommandDef(
+                verb="run", target="consensus",
+                handler_key="run_pipeline",
+                description="Run the consensus pipeline.",
+                examples=["run consensus"],
+            ),
+            CommandDef(
+                verb="run", target="reporting",
+                handler_key="run_pipeline",
+                description="Run the reporting pipeline.",
+                examples=["run reporting"],
+            ),
+
+            # ── show ─────────────────────────────────────────────────────────
+            CommandDef(
+                verb="show", target="status",
+                handler_key="show_status",
+                description="Show full runtime status: mode, modules, pipelines.",
+                examples=["show status"],
+            ),
+            CommandDef(
+                verb="show", target="pipeline",
+                handler_key="show_pipeline",
+                description="Show schedule and mode for all pipelines.",
+                examples=["show pipeline"],
+            ),
+            CommandDef(
+                verb="show", target="history",
+                handler_key="show_history",
+                description="Show recent pipeline run history.",
+                params=[
+                    ParamSchema("limit", "int", default=10,
+                                description="Number of entries to show."),
+                ],
+                examples=["show history", "show history 20"],
+            ),
+            CommandDef(
+                verb="show", target="state",
+                handler_key="show_state",
+                description="Show runtime state: cycle count, uptime, last cycle.",
+                examples=["show state"],
+            ),
+            CommandDef(
+                verb="show", target="audit",
+                handler_key="show_audit",
+                description="Show last N audit log entries.",
+                params=[
+                    ParamSchema("limit", "int", default=10,
+                                description="Number of entries to show."),
+                ],
+                examples=["show audit", "show audit 20"],
+            ),
+            CommandDef(
+                verb="show", target="risk",
+                handler_key="show_risk",
+                description="Show current financial risk limits and alerts.",
+                examples=["show risk"],
+            ),
+            CommandDef(
+                verb="show", target="module",
+                handler_key="show_module",
+                description="Show health and ready status of all modules.",
+                params=[
+                    ParamSchema("name", "str", required=False,
+                                choices=list(MODULE_NAMES),
+                                description="Module name. Omit for all."),
+                ],
+                examples=["show module", "show module profit_engine"],
+            ),
+
+            # ── generate ─────────────────────────────────────────────────────
+            CommandDef(
+                verb="generate", target="report",
+                handler_key="generate_report",
+                description="Generate and export a consolidated report.",
+                params=[
+                    ParamSchema("pipeline", "str", required=False,
+                                choices=list(PIPELINE_NAMES),
+                                description="Scope to one pipeline. Omit for all."),
+                    ParamSchema("export", "str", required=False,
+                                description="Output path for JSON export."),
+                ],
+                examples=[
+                    "generate report",
+                    "generate report financial",
+                    "generate report intelligence export reports/live/intel.json",
+                ],
+            ),
+            CommandDef(
+                verb="generate", target="audit",
+                handler_key="generate_audit",
+                description="Verify and export the full audit chain.",
+                examples=["generate audit"],
+            ),
+            CommandDef(
+                verb="generate", target="checkpoint",
+                handler_key="generate_checkpoint",
+                description="Force a state checkpoint now.",
+                examples=["generate checkpoint"],
+            ),
+
+            # ── start / stop ─────────────────────────────────────────────────
+            CommandDef(
+                verb="start", target="scheduler",
+                handler_key="start_scheduler",
+                description="Enable the pipeline scheduler.",
+                examples=["start scheduler"],
+            ),
+            CommandDef(
+                verb="stop", target="scheduler",
+                handler_key="stop_scheduler",
+                description="Disable the pipeline scheduler (manual runs only).",
+                requires_confirm=True,
+                examples=["stop scheduler"],
+            ),
+            CommandDef(
+                verb="start", target="pipeline",
+                handler_key="enable_pipeline",
+                description="Enable a pipeline (set mode to enabled).",
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                choices=list(PIPELINE_NAMES),
+                                description="Pipeline to enable."),
+                ],
+                examples=["start pipeline reporting"],
+            ),
+            CommandDef(
+                verb="stop", target="pipeline",
+                handler_key="disable_pipeline",
+                description="Disable a pipeline.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                choices=list(PIPELINE_NAMES),
+                                description="Pipeline to disable."),
+                ],
+                examples=["stop pipeline evolution"],
+            ),
+
+            # ── enable / disable ─────────────────────────────────────────────
+            CommandDef(
+                verb="enable", target="module",
+                handler_key="enable_module",
+                description="Enable a NEXUS module.",
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                choices=list(MODULE_NAMES),
+                                description="Module name."),
+                ],
+                examples=["enable module auto_evolution"],
+            ),
+            CommandDef(
+                verb="disable", target="module",
+                handler_key="disable_module",
+                description="Disable a NEXUS module.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                choices=list(MODULE_NAMES),
+                                description="Module name."),
+                ],
+                examples=["disable module web_intelligence"],
+            ),
+            CommandDef(
+                verb="enable", target="evolution",
+                handler_key="enable_evolution_writes",
+                description="Allow auto-evolution to apply patches (disables dry-run).",
+                requires_confirm=True,
+                examples=["enable evolution"],
+            ),
+            CommandDef(
+                verb="disable", target="evolution",
+                handler_key="disable_evolution_writes",
+                description="Set auto-evolution back to dry-run (suggest-only).",
+                examples=["disable evolution"],
+            ),
+
+            # ── set / increase / decrease ─────────────────────────────────────
+            CommandDef(
+                verb="set", target="limit",
+                handler_key="set_limit",
+                description="Set a named runtime limit to an exact value.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                description="Limit name (e.g. max_drawdown, sharpe_alert, sentiment_threshold)."),
+                    ParamSchema("value", "float", required=True,
+                                description="New value."),
+                ],
+                examples=[
+                    "set limit max_drawdown 0.15",
+                    "set limit sharpe_alert 1.0",
+                    "set limit sentiment_threshold 0.5",
+                ],
+            ),
+            CommandDef(
+                verb="increase", target="limit",
+                handler_key="adjust_limit",
+                description="Increase a limit by an amount or percentage.",
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                description="Limit name."),
+                    ParamSchema("amount", "float", required=True,
+                                description="Amount to add (e.g. 0.05 or '5%')."),
+                ],
+                examples=[
+                    "increase limit max_drawdown 0.05",
+                    "increase limit sentiment_threshold 10%",
+                ],
+            ),
+            CommandDef(
+                verb="decrease", target="limit",
+                handler_key="adjust_limit",
+                description="Decrease a limit by an amount or percentage.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                description="Limit name."),
+                    ParamSchema("amount", "float", required=True,
+                                description="Amount to subtract (e.g. 0.02 or '2%')."),
+                ],
+                examples=[
+                    "decrease limit max_drawdown 0.02",
+                    "decrease limit sharpe_alert 20%",
+                ],
+            ),
+            CommandDef(
+                verb="set", target="risk",
+                handler_key="set_limit",
+                description="Alias for 'set limit' focused on risk parameters.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("name", "str", required=True,
+                                description="Risk param name."),
+                    ParamSchema("value", "float", required=True,
+                                description="New value."),
+                ],
+                examples=["set risk max_drawdown 0.12"],
+            ),
+
+            # ── pause / resume ───────────────────────────────────────────────
+            CommandDef(
+                verb="pause", target="pipeline",
+                handler_key="pause_runtime",
+                description="Pause the runtime scheduler (no new pipelines start).",
+                examples=["pause pipeline"],
+            ),
+            CommandDef(
+                verb="resume", target="pipeline",
+                handler_key="resume_runtime",
+                description="Resume a paused runtime scheduler.",
+                examples=["resume pipeline"],
+            ),
+
+            # ── reset ────────────────────────────────────────────────────────
+            CommandDef(
+                verb="reset", target="state",
+                handler_key="reset_state",
+                description="Reset runtime counters and reload last checkpoint.",
+                requires_confirm=True,
+                examples=["reset state"],
+            ),
+
+            # ── list ─────────────────────────────────────────────────────────
+            CommandDef(
+                verb="list", target="pipeline",
+                handler_key="list_pipelines",
+                description="List all pipelines with mode and interval.",
+                examples=["list pipeline"],
+            ),
+            CommandDef(
+                verb="list", target="module",
+                handler_key="list_modules",
+                description="List all modules and their ready status.",
+                examples=["list module"],
+            ),
+
+            # ── check ────────────────────────────────────────────────────────
+            CommandDef(
+                verb="check", target="audit",
+                handler_key="check_audit",
+                description="Verify the audit chain integrity.",
+                examples=["check audit"],
+            ),
+            CommandDef(
+                verb="check", target="risk",
+                handler_key="show_risk",
+                description="Check current risk parameters and alert thresholds.",
+                examples=["check risk"],
+            ),
+        ]
+
+        for d in defs:
+            self.register(d)
