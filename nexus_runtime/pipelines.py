@@ -189,6 +189,28 @@ class IntelligencePipeline(BasePipeline):
                 "score": score, "threshold": cfg.sentiment_threshold
             })
 
+        # Signal Engine — generate signals for symbols with detected patterns
+        try:
+            from .signal_engine import SignalEngine
+            sig_engine = SignalEngine(
+                modules=self._modules, config=self._config,
+                bus=self._bus, reports=rep,
+            )
+            symbols = list({
+                p.get("symbol", "") for p in patterns if p.get("symbol")
+            })
+            signals = []
+            for sym in symbols[:5]:   # cap at 5 per cycle to limit latency
+                sig = sig_engine.generate_signal(sym)
+                signals.append(sig.to_dict())
+            if symbols and not signals:
+                # No symbol-tagged patterns — run on a default watchlist symbol
+                sig = sig_engine.generate_signal(symbols[0] if symbols else "NEXUS")
+                signals.append(sig.to_dict())
+            result.data["signals"] = signals
+        except Exception as exc:
+            result.errors.append(f"signal_engine: {exc}")
+
         # Generate report
         if rep:
             try:
@@ -246,6 +268,24 @@ class FinancialPipeline(BasePipeline):
                                            else str(bt_result))
             except Exception as exc:
                 result.errors.append(f"backtest: {exc}")
+
+        # Signal Engine — compute risk metrics for open positions
+        try:
+            from .signal_engine import SignalEngine
+            sig_engine = SignalEngine(
+                modules=self._modules, config=self._config,
+                bus=self._bus, reports=rep,
+            )
+            positions = pe_status.get("positions", [])
+            risk_summaries = []
+            for pos in positions[:5]:
+                sym = pos.get("symbol", "")
+                if sym:
+                    rm = sig_engine.compute_risk(sym)
+                    risk_summaries.append(rm.to_dict())
+            result.data["signal_risk"] = risk_summaries
+        except Exception as exc:
+            result.errors.append(f"signal_engine risk: {exc}")
 
         # Generate report
         if rep:
@@ -383,6 +423,32 @@ class ConsensusPipeline(BasePipeline):
             result.errors.append(f"multi_ia.status: {exc}")
             mia_status = {}
 
+        # Signal Engine — IA consensus on notable symbols from intelligence data
+        try:
+            from .signal_engine import SignalEngine
+            sig_engine = SignalEngine(
+                modules=self._modules, config=self._config,
+                bus=self._bus, reports=rep,
+            )
+            # Derive symbols from previous intelligence signals if present
+            signal_results = []
+            wi = self._modules.web_intelligence
+            wi_status = wi.status() if hasattr(wi, "status") else {}
+            symbols = list({
+                p.get("symbol", "")
+                for p in wi_status.get("pattern_detector", {}).get("detected_patterns", [])
+                if p.get("symbol")
+            })
+            for sym in symbols[:3]:
+                _, consensus_data = sig_engine._ia_consensus(
+                    sym, type("_R", (), {"errors": []})()
+                )
+                if consensus_data:
+                    signal_results.append({"symbol": sym, "consensus": consensus_data})
+            result.data["signal_consensus"] = signal_results
+        except Exception as exc:
+            result.errors.append(f"signal_engine consensus: {exc}")
+
         # Generate report
         if rep:
             try:
@@ -475,6 +541,27 @@ class ReportingPipeline(BasePipeline):
 
         result.data["reports_generated"] = generated
         result.report_id = generated[0] if generated else None
+
+        # Signal Engine — generate a summary signal report for recent signals
+        try:
+            from .signal_engine import SignalEngine
+            sig_engine = SignalEngine(
+                modules=self._modules, config=self._config,
+                bus=self._bus, reports=rep,
+            )
+            recent_signals = sig_engine.history(limit=10)
+            result.data["recent_signals"] = recent_signals
+            if cfg.auto_export_json and recent_signals:
+                import json
+                from pathlib import Path
+                sig_path = Path(cfg.export_dir) / "signals_latest.json"
+                sig_path.parent.mkdir(parents=True, exist_ok=True)
+                sig_path.write_text(
+                    json.dumps({"signals": recent_signals}, indent=2, default=str),
+                    encoding="utf-8",
+                )
+        except Exception as exc:
+            result.errors.append(f"signal_engine reporting: {exc}")
 
         self._emit(EventType.REPORT_GENERATED, {
             "count":      len(generated),

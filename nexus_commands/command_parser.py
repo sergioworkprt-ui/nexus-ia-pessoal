@@ -67,6 +67,12 @@ class ParseError:
 
 # Verb synonyms → canonical verb
 _VERB_SYNONYMS: Dict[str, str] = {
+    # signal / analyze
+    "analyse": "analyze", "scan": "analyze",
+    "evaluate": "analyze", "assess": "analyze",
+    # entry / exit
+    "buy": "entry", "long": "entry",
+    "sell": "exit", "close": "exit", "short": "exit",
     # run
     "execute": "run", "trigger": "run", "launch": "run", "fire": "run",
     # show
@@ -161,6 +167,12 @@ _TARGET_SYNONYMS: Dict[str, str] = {
     "scheduling": "scheduler",
     # reporting
     "reporting": "reporting",
+    # signal engine
+    "signals": "signal",
+    "trade signal": "signal",
+    "trade": "signal",
+    "entries": "entry",
+    "exits": "exit",
 }
 
 # Known limit aliases → canonical config attribute names
@@ -338,6 +350,10 @@ class CommandParser:
             if tok in PIPELINE_NAMES and verb in ("run", "start", "stop", "enable", "disable", "pause", "resume"):
                 return tok, verb_idx + 1 + i + 1
 
+            # Signal engine: symbol used directly after verb: "signal BTC", "analyze ETH"
+            if verb in ("signal", "analyze", "entry", "exit") and re.match(r'^[a-z]{1,6}$', tok):
+                return verb, verb_idx + 1 + i   # target = verb itself; symbol stays in remaining
+
             # Module name used as target shorthand
             if tok in MODULE_NAMES and verb in ("enable", "disable", "show", "start", "stop"):
                 return "module", verb_idx + 1 + i + 1
@@ -380,6 +396,14 @@ class CommandParser:
     ) -> Dict[str, Any]:
         params: Dict[str, Any] = {}
         remaining = tokens[after_idx:]
+
+        # ── symbol (signal engine commands) ─────────────────────────────
+        if verb in ("signal", "analyze", "entry", "exit") or target in ("signal", "entry", "exit"):
+            for tok in remaining:
+                # Symbol: uppercase alpha-numeric, 1-6 chars (e.g. BTC, ETH, AAPL)
+                if re.match(r'^[a-z]{1,6}$', tok) and tok not in _NOISE and tok not in TARGETS:
+                    params["symbol"] = tok.upper()
+                    break
 
         # ── pipeline name ────────────────────────────────────────────────
         if target in ("pipeline", "report", *PIPELINE_NAMES):
@@ -472,6 +496,12 @@ class CommandParser:
         # risk used as target for mutating verbs → fall back to limit
         if target == "risk" and verb in ("set", "increase", "decrease"):
             defn = self._registry.get(verb, "limit")
+            if defn:
+                return defn
+
+        # analyze/signal used as both verb and target → fall back to signal:signal
+        if verb in ("analyze", "signal") and target == verb:
+            defn = self._registry.get("analyze", "signal") or self._registry.get("signal", "signal")
             if defn:
                 return defn
 

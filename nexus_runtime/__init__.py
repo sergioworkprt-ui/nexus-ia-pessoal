@@ -82,6 +82,9 @@ from .pipelines import (
     PipelineStatus,
 )
 
+# Signal Engine
+from .signal_engine import SignalEngine, SignalResult, EntryEvaluation, ExitEvaluation, RiskMetrics
+
 # Runtime
 from .runtime import NexusRuntime
 
@@ -103,6 +106,8 @@ __all__ = [
     "IntelligencePipeline", "FinancialPipeline", "EvolutionPipeline",
     "ConsensusPipeline", "ReportingPipeline",
     "PipelineRunResult", "PipelineStatus",
+    # Signal Engine
+    "SignalEngine", "SignalResult", "EntryEvaluation", "ExitEvaluation", "RiskMetrics",
     # Runtime
     "NexusRuntime",
 ]

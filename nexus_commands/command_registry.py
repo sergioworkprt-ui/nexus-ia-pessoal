@@ -18,6 +18,7 @@ VERBS: Set[str] = {
     "run", "show", "generate", "start", "stop",
     "enable", "disable", "increase", "decrease", "set",
     "pause", "resume", "reset", "list", "check",
+    "signal", "analyze", "entry", "exit",
 }
 
 TARGETS: Set[str] = {
@@ -25,6 +26,7 @@ TARGETS: Set[str] = {
     "state", "evolution", "intelligence", "consensus",
     "financial", "reporting", "scheduler", "limit",
     "status", "history", "checkpoint",
+    "signal", "entry", "exit",
 }
 
 PIPELINE_NAMES: Set[str] = {
@@ -488,6 +490,78 @@ class CommandRegistry:
                 handler_key="show_risk",
                 description="Check current risk parameters and alert thresholds.",
                 examples=["check risk"],
+            ),
+
+            # ── Signal Engine ────────────────────────────────────────────────
+            CommandDef(
+                verb="signal", target="signal",
+                handler_key="signal_generate",
+                description="Run the full signal pipeline for a symbol: patterns + sentiment + IA consensus.",
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Trading symbol (e.g. BTC, ETH, AAPL)."),
+                ],
+                examples=["signal BTC", "signal ETH", "signal AAPL"],
+            ),
+            CommandDef(
+                verb="analyze", target="signal",
+                handler_key="signal_generate",
+                description="Alias for 'signal <symbol>': full signal analysis.",
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Trading symbol."),
+                ],
+                examples=["analyze BTC", "analyze ETH"],
+            ),
+            CommandDef(
+                verb="entry", target="entry",
+                handler_key="signal_entry",
+                description="Evaluate entry readiness for a symbol (pattern + sentiment).",
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Trading symbol."),
+                ],
+                examples=["entry BTC", "entry AAPL"],
+            ),
+            CommandDef(
+                verb="exit", target="exit",
+                handler_key="signal_exit",
+                description="Evaluate exit readiness for an open position.",
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Trading symbol."),
+                ],
+                examples=["exit BTC", "exit ETH"],
+            ),
+            CommandDef(
+                verb="check", target="signal",
+                handler_key="signal_generate",
+                description="Alias for signal: full analysis for a symbol.",
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Trading symbol."),
+                ],
+                examples=["check signal BTC"],
+            ),
+            CommandDef(
+                verb="show", target="signal",
+                handler_key="signal_history",
+                description="Show recent signal history (last N signals).",
+                params=[
+                    ParamSchema("limit", "int", default=10,
+                                description="Number of signals to show."),
+                ],
+                examples=["show signal", "show signal 20"],
+            ),
+            CommandDef(
+                verb="analyze", target="risk",
+                handler_key="signal_risk",
+                description="Compute risk metrics for a symbol.",
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Trading symbol."),
+                ],
+                examples=["analyze risk BTC", "risk BTC"],
             ),
         ]
 
