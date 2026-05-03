@@ -6,3 +6,4 @@ venv/
 .DS_Store
 logs/nexus.log
 logs/live/stdout.log
+logs/audit_chain.jsonl
