@@ -463,6 +463,133 @@ def render_limits() -> str:
 
 
 # ---------------------------------------------------------------------------
+# /evolution
+# ---------------------------------------------------------------------------
+
+def render_evolution() -> str:
+    data     = R.read_evolution_data()
+    summary  = data["summary"]
+    log      = data["log"]
+    pending  = data["pending_proposals"]
+    active   = data["active_adjustments"]
+
+    # Performance stats from summary
+    sig_count = summary.get("signal_count", "—")
+    hit_rate  = summary.get("hit_rate", None)
+    avg_score = summary.get("avg_score", None)
+    vol_reg   = summary.get("volatility_regime", "—")
+    quality   = summary.get("data_quality", "—")
+    eval_at   = _fmt_ts(summary.get("evaluated_at", ""))
+
+    try:
+        hr_pct  = f"{float(hit_rate)*100:.1f}%"
+        hr_col  = "#3fb950" if float(hit_rate) >= 0.6 else (
+                  "#d29922" if float(hit_rate) >= 0.4 else "#f85149")
+    except Exception:
+        hr_pct  = "—"
+        hr_col  = "#8b949e"
+
+    try:
+        avg_s_str = f"{float(avg_score):.3f}"
+    except Exception:
+        avg_s_str = "—"
+
+    vol_col = {"low": "#3fb950", "medium": "#d29922", "high": "#f85149"}.get(
+        str(vol_reg).lower(), "#8b949e"
+    )
+
+    no_data_alert = ""
+    if not summary:
+        no_data_alert = (
+            '<div class="alert alert-info">No evolution summary yet. '
+            'Run the reporting pipeline or use <code>evolve</code> in the command layer.</div>'
+        )
+
+    stats_html = f"""<div class="grid grid-4">
+  {stat_card("Signals Evaluated", sig_count, f"last evaluated {eval_at}")}
+  {stat_card("Hit Rate", hr_pct, "score ≥ 0.6", hr_col)}
+  {stat_card("Avg Score", avg_s_str, "")}
+  {stat_card("Volatility Regime", vol_reg.upper() if vol_reg != "—" else "—",
+             f"data quality: {quality}", vol_col)}
+</div>"""
+
+    # Learning notes
+    learning = summary.get("learning", {})
+    notes    = learning.get("notes", [])
+    notes_html = ""
+    if notes:
+        items = "".join(f"<li>{_esc(n)}</li>" for n in notes)
+        notes_html = f'<div class="card"><div class="card-title">Learning Notes</div><ul style="padding-left:20px;line-height:2">{items}</ul></div>'
+
+    # Pending proposals table
+    def _impact_badge(lvl: str) -> str:
+        return _badge(lvl, "warning" if lvl == "medium" else "info")
+
+    def _sign_str(pct: float) -> str:
+        col = "#3fb950" if pct > 0 else "#f85149"
+        sign = "+" if pct >= 0 else ""
+        return f'<span style="color:{col};font-weight:600">{sign}{pct:.1f}%</span>'
+
+    pending_rows = []
+    for p in pending:
+        pending_rows.append([
+            _esc(p.get("proposal_id", "")[:8]),
+            f'<code>{_esc(p.get("parameter", ""))}</code>',
+            _esc(str(p.get("current_value", ""))),
+            _esc(str(p.get("proposed_value", ""))),
+            _sign_str(float(p.get("change_pct", 0))),
+            _impact_badge(p.get("impact_level", "low")),
+            _esc(p.get("rationale", "")[:80]),
+        ])
+
+    # Active adjustments (last applied)
+    active_rows = []
+    for p in active:
+        active_rows.append([
+            f'<code>{_esc(p.get("parameter", ""))}</code>',
+            _esc(str(p.get("current_value", ""))),
+            _esc(str(p.get("proposed_value", ""))),
+            _sign_str(float(p.get("change_pct", 0))),
+            _impact_badge(p.get("impact_level", "low")),
+        ])
+
+    # History table
+    history_rows = []
+    for e in log[:15]:
+        ts     = _fmt_ts(e.get("ts", ""))
+        action = e.get("action", "?")
+        evo_id = str(e.get("evo_id", "?"))[:10]
+        n_prop = len(e.get("proposals", []))
+        action_b = (_badge("apply", "success") if action == "apply" else
+                    _badge("rollback", "warning") if action == "rollback" else
+                    _badge(action, "muted"))
+        history_rows.append([
+            _esc(ts), action_b, f'<code>{_esc(evo_id)}</code>', _esc(str(n_prop)),
+        ])
+
+    body = f"""
+<h1>Evolution Engine</h1>
+<p class="subtitle">Controlled, data-driven parameter evolution — read-only view. Use the command layer to run or apply.</p>
+{no_data_alert}
+{stats_html}
+{notes_html}
+<div class="section-title">Pending Proposals</div>
+{data_table(["ID", "Parameter", "Current", "Proposed", "Change", "Impact", "Rationale"],
+             pending_rows,
+             "No pending proposals. Run 'evolve' in the command layer: python nexus_cli.py")}
+<div class="section-title">Last Applied Adjustments</div>
+{data_table(["Parameter", "Was", "Now", "Change", "Impact"],
+             active_rows,
+             "No adjustments applied yet.")}
+<div class="section-title">Evolution History</div>
+{data_table(["Timestamp", "Action", "Evo ID", "Proposals"],
+             history_rows,
+             "No evolution log entries. Evolution log is written to logs/evolution_live.jsonl")}
+"""
+    return page("Evolution", body, active="/evolution")
+
+
+# ---------------------------------------------------------------------------
 # 404
 # ---------------------------------------------------------------------------
 

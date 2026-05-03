@@ -52,6 +52,8 @@ class _Handler(BaseHTTPRequestHandler):
         elif path.startswith("/reports/"):
             name = path[len("/reports/"):]
             html = pages.render_report_detail(name)
+        elif path == "/evolution":
+            html = pages.render_evolution()
         elif path == "/limits":
             html = pages.render_limits()
         else:

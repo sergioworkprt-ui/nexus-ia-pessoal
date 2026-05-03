@@ -287,6 +287,23 @@ class FinancialPipeline(BasePipeline):
         except Exception as exc:
             result.errors.append(f"signal_engine risk: {exc}")
 
+        # Evolution Engine — feed risk performance into evaluation
+        try:
+            from .evolution_engine import EvolutionEngine
+            evo_engine = EvolutionEngine(
+                modules=self._modules, config=self._config,
+                bus=self._bus, reports=rep,
+            )
+            perf = evo_engine.evaluate_performance()
+            result.data["evolution_perf_snapshot"] = {
+                "avg_drawdown":      perf.avg_drawdown,
+                "volatility_regime": perf.volatility_regime,
+                "hit_rate":          perf.hit_rate,
+                "signal_count":      perf.signal_count,
+            }
+        except Exception as exc:
+            result.errors.append(f"evolution_engine.evaluate_performance: {exc}")
+
         # Generate report
         if rep:
             try:
@@ -449,6 +466,31 @@ class ConsensusPipeline(BasePipeline):
         except Exception as exc:
             result.errors.append(f"signal_engine consensus: {exc}")
 
+        # Evolution Engine — feed consensus performance into evaluation
+        try:
+            from .evolution_engine import EvolutionEngine
+            evo_engine = EvolutionEngine(
+                modules=self._modules, config=self._config,
+                bus=self._bus, reports=rep,
+            )
+            # Store last consensus agreement in checkpoint-accessible dict
+            agreements = [
+                float(cr.get("agreement_score", 1.0))
+                for cr in consensus_results
+                if isinstance(cr, dict)
+            ]
+            avg_agreement = sum(agreements) / len(agreements) if agreements else 1.0
+            result.data["evolution_consensus_agreement"] = round(avg_agreement, 4)
+            # Run a lightweight performance snapshot
+            perf = evo_engine.evaluate_performance()
+            result.data["evolution_perf_consensus"] = {
+                "avg_agreement":   round(avg_agreement, 4),
+                "hit_rate":        perf.hit_rate,
+                "data_quality":    perf.data_quality,
+            }
+        except Exception as exc:
+            result.errors.append(f"evolution_engine.consensus_eval: {exc}")
+
         # Generate report
         if rep:
             try:
@@ -562,6 +604,39 @@ class ReportingPipeline(BasePipeline):
                 )
         except Exception as exc:
             result.errors.append(f"signal_engine reporting: {exc}")
+
+        # Evolution Engine — include evolution summary in reports
+        try:
+            from .evolution_engine import EvolutionEngine
+            import json as _json
+            from pathlib import Path as _Path
+            evo_engine = EvolutionEngine(
+                modules=self._modules, config=self._config,
+                bus=self._bus, reports=rep,
+            )
+            perf     = evo_engine.evaluate_performance()
+            learning = evo_engine.learn_from_signals()
+            proposals = evo_engine.propose_adjustments(perf, learning)
+            evo_summary = {
+                "evaluated_at":      perf.evaluated_at,
+                "signal_count":      perf.signal_count,
+                "hit_rate":          perf.hit_rate,
+                "avg_score":         perf.avg_score,
+                "volatility_regime": perf.volatility_regime,
+                "data_quality":      perf.data_quality,
+                "learning":          learning.to_dict(),
+                "pending_proposals": [p.to_dict() for p in proposals],
+            }
+            result.data["evolution_summary"] = evo_summary
+            if cfg.auto_export_json:
+                evo_path = _Path(cfg.export_dir) / "evolution_summary.json"
+                evo_path.parent.mkdir(parents=True, exist_ok=True)
+                evo_path.write_text(
+                    _json.dumps(evo_summary, indent=2, default=str),
+                    encoding="utf-8",
+                )
+        except Exception as exc:
+            result.errors.append(f"evolution_engine reporting: {exc}")
 
         self._emit(EventType.REPORT_GENERATED, {
             "count":      len(generated),

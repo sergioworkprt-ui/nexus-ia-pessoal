@@ -110,6 +110,15 @@ _VERB_SYNONYMS: Dict[str, str] = {
     # check
     "verify": "check", "validate": "check", "inspect": "check",
     "test": "check", "examine": "check",
+    # evolve
+    "evolui": "evolve", "evoluir": "evolve", "evolve": "evolve",
+    # apply
+    "aplica": "apply", "aplicar": "apply",
+    # rollback
+    "reverte": "rollback", "reverter": "rollback", "revert": "rollback",
+    "undo": "rollback", "desfaz": "rollback",
+    # propose
+    "mostra propostas": "propose", "propor": "propose",
 }
 
 # Target synonyms → canonical target
@@ -173,6 +182,12 @@ _TARGET_SYNONYMS: Dict[str, str] = {
     "trade": "signal",
     "entries": "entry",
     "exits": "exit",
+    # evolution engine
+    "proposals": "evolution",
+    "propostas": "evolution",
+    "evolution proposals": "evolution",
+    "evolução": "evolution",
+    "evoluição": "evolution",
 }
 
 # Known limit aliases → canonical config attribute names
@@ -242,7 +257,12 @@ class CommandParser:
         if not text or not text.strip():
             return None, ParseError(text, "Empty input.")
 
-        raw    = text.strip()
+        raw = text.strip()
+        # Strip "NEXUS[,.]" prefix that users commonly include
+        raw = re.sub(r'^nexus[,.\s]+', '', raw, flags=re.IGNORECASE).strip()
+        if not raw:
+            return None, ParseError(text, "Empty input after prefix stripping.")
+
         tokens = self._tokenise(raw)
         if not tokens:
             return None, ParseError(raw, "No recognisable tokens.")
@@ -263,6 +283,10 @@ class CommandParser:
             if pipeline and verb == "run":
                 target = pipeline
                 target_idx = tokens.index(pipeline) if pipeline in tokens else len(tokens)
+            elif verb in ("evolve", "apply", "rollback", "propose"):
+                # Evolution commands default target
+                target = "evolution"
+                target_idx = len(tokens)
             else:
                 suggestions = [f"{verb} {t}" for t in sorted(TARGETS)[:6]]
                 return None, ParseError(
@@ -301,7 +325,13 @@ class CommandParser:
         text = text.lower()
         text = re.sub(r"[^\w\s%.,-]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
-        return [t for t in text.split() if t not in _NOISE]
+        # Strip trailing sentence-ending punctuation from each token (keep internal dots for decimals)
+        tokens = []
+        for t in text.split():
+            t = t.rstrip(".,;:!")
+            if t and t not in _NOISE:
+                tokens.append(t)
+        return tokens
 
     # ------------------------------------------------------------------
     # Verb extraction
@@ -502,6 +532,18 @@ class CommandParser:
         # analyze/signal used as both verb and target → fall back to signal:signal
         if verb in ("analyze", "signal") and target == verb:
             defn = self._registry.get("analyze", "signal") or self._registry.get("signal", "signal")
+            if defn:
+                return defn
+
+        # evolve used as both verb and target (bare "evolve" command)
+        if verb == "evolve" and target in ("evolve", "evolution", ""):
+            defn = self._registry.get("evolve", "evolution")
+            if defn:
+                return defn
+
+        # apply / rollback / propose with no or wrong target → evolution
+        if verb in ("apply", "rollback", "propose") and target not in ("evolution",):
+            defn = self._registry.get(verb, "evolution")
             if defn:
                 return defn
 

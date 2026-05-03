@@ -551,5 +551,110 @@ srv.stop()
 
 ---
 
+## Evolution Engine — Evolução Controlada de Parâmetros (Fase 9)
+
+### Comandos de chat (Command Layer)
+
+| Comando | Descrição |
+|---|---|
+| `evolve` | Avalia performance, aprende com sinais e propõe ajustes |
+| `NEXUS, evolui.` | Variante em português (sinónimo de `evolve`) |
+| `show evolution` | Mostra propostas pendentes e estado atual |
+| `propose evolution` | Alias para `show evolution` |
+| `NEXUS, mostra propostas de evolução.` | Variante em português |
+| `apply evolution` | Aplica todas as propostas pendentes (requer confirmação) |
+| `NEXUS, aplica evolução.` | Variante em português |
+| `rollback evolution` | Reverte o último passo de evolução (requer confirmação) |
+| `rollback evolution 2` | Reverte os últimos 2 passos |
+| `NEXUS, reverte a última evolução.` | Variante em português |
+| `show evolution history` | Histórico de evoluções aplicadas |
+| `show evolution history 5` | Últimos 5 registos do histórico |
+
+### Fluxo de trabalho típico
+
+```
+1. evolve                     → avalia + propõe
+2. show evolution             → revê propostas
+3. apply evolution            → aplica (pede confirmação)
+   .confirm()                 → confirma a aplicação
+4. rollback evolution         → reverte se necessário
+   .confirm()                 → confirma o rollback
+```
+
+### Perfil BALANCED — restrições de segurança
+
+| Restrição | Valor |
+|---|---|
+| Variação máxima por parâmetro por ciclo | 15% do valor atual |
+| Máximo de propostas por ciclo | 4 |
+| Mínimo de sinais para propor mudanças | 3 |
+| Cap: `intelligence.sentiment_threshold` | [0.05, 0.90] |
+| Cap: `financial.max_drawdown_alert` | [0.03, 0.25] |
+| Cap: `financial.sharpe_alert` | [0.05, 3.00] |
+| Cap: `consensus.agreement_alert` | [0.15, 0.85] |
+
+### Parâmetros ajustáveis
+
+| Parâmetro | Descrição |
+|---|---|
+| `intelligence.sentiment_threshold` | Limiar de alerta de sentimento |
+| `financial.max_drawdown_alert` | Limiar de alerta de drawdown |
+| `financial.sharpe_alert` | Limiar de alerta do rácio de Sharpe |
+| `consensus.agreement_alert` | Limiar de alerta de divergência de consenso |
+
+### Auditoria e rastreabilidade
+
+- Cada apply/rollback escreve em `logs/evolution_live.jsonl`
+- Cada entrada inclui: `evo_id`, `action`, `ts`, `proposals`, `snapshot_before`, `snapshot_after`, `hash`, `prev_hash`
+- Rollback restaura o `snapshot_before` do step mais antigo revertido
+- Audit chain auditada em `logs/live/audit_live.jsonl`
+
+### Dashboard
+
+- Rota `/evolution` no dashboard mostra:
+  - Métricas de performance usadas para evolução
+  - Propostas pendentes
+  - Ajustes ativos (último apply)
+  - Histórico de evolução (logs/evolution_live.jsonl)
+
+### Python API
+
+```python
+from nexus_runtime import NexusRuntime
+from nexus_runtime.evolution_engine import EvolutionEngine
+
+runtime = NexusRuntime.live()
+runtime.start()
+
+ee = EvolutionEngine.from_runtime(runtime)
+
+# Avaliar performance
+perf = ee.evaluate_performance()
+print(perf.hit_rate, perf.volatility_regime)
+
+# Aprender com sinais
+learn = ee.learn_from_signals()
+print(learn.patterns_worked, learn.risk_too_tight)
+
+# Propor ajustes
+proposals = ee.propose_adjustments(perf, learn)
+for p in proposals:
+    print(p.parameter, p.current_value, "→", p.proposed_value, f"({p.change_pct:+.1f}%)")
+
+# Aplicar
+result = ee.apply_adjustments(proposals)
+print(result.applied_count, result.evo_id)
+
+# Reverter
+rb = ee.rollback(last_n=1)
+print(rb.rolled_back, rb.evo_ids)
+
+# Histórico
+for entry in ee.history(limit=10):
+    print(entry["ts"], entry["action"], len(entry["proposals"]))
+```
+
+---
+
 *Documentação gerada automaticamente pelo sistema NEXUS.*  
 *Para ajuda detalhada sobre um comando: `nexus help <comando>`*

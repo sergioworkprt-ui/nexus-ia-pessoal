@@ -268,6 +268,12 @@ class CommandEngine:
             "signal_exit":           self._h_signal_exit,
             "signal_risk":           self._h_signal_risk,
             "signal_history":        self._h_signal_history,
+            # Evolution Engine
+            "evolve_run":            self._h_evolve_run,
+            "evolve_show":           self._h_evolve_show,
+            "evolve_apply":          self._h_evolve_apply,
+            "evolve_rollback":       self._h_evolve_rollback,
+            "evolve_history":        self._h_evolve_history,
         }
 
     # ── run ──────────────────────────────────────────────────────────────
@@ -763,6 +769,127 @@ class CommandEngine:
         except Exception as exc:
             return CommandResponse(ok=False, command=str(intent),
                                    message=f"Signal history failed: {exc}")
+
+    # ------------------------------------------------------------------
+    # Evolution Engine handlers
+    # ------------------------------------------------------------------
+
+    def _get_evolution_engine(self):
+        from nexus_runtime.evolution_engine import EvolutionEngine
+        rt = self._runtime
+        return EvolutionEngine(
+            modules=rt.integration.modules,
+            config=rt._config,
+            bus=getattr(rt, "bus", None),
+            reports=getattr(rt.integration.modules, "reports", None),
+        )
+
+    def _h_evolve_run(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ee     = self._get_evolution_engine()
+            perf   = ee.evaluate_performance()
+            learn  = ee.learn_from_signals()
+            props  = ee.propose_adjustments(perf, learn)
+            msg    = (
+                f"Evolution cycle done. Signals={perf.signal_count}  "
+                f"hit_rate={perf.hit_rate:.1%}  vol={perf.volatility_regime}  "
+                f"proposals={len(props)}"
+            )
+            return CommandResponse(
+                ok=True, command=str(intent), message=msg,
+                data={
+                    "performance":  perf.to_dict(),
+                    "learning":     learn.to_dict(),
+                    "proposals":    [p.to_dict() for p in props],
+                },
+                warnings=learn.notes,
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Evolution run failed: {exc}")
+
+    def _h_evolve_show(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ee     = self._get_evolution_engine()
+            status = ee.status()
+            props  = [p.to_dict() for p in ee.pending_proposals()]
+            if not props:
+                msg = "No pending proposals. Run 'evolve' first to generate proposals."
+            else:
+                lines = []
+                for p in props:
+                    sign  = "+" if p["change_pct"] >= 0 else ""
+                    lines.append(
+                        f"  [{p['impact_level'].upper()}] {p['parameter']}: "
+                        f"{p['current_value']} → {p['proposed_value']} "
+                        f"({sign}{p['change_pct']:.1f}%)"
+                    )
+                msg = f"{len(props)} pending proposal(s):\n" + "\n".join(lines)
+            return CommandResponse(ok=True, command=str(intent), message=msg,
+                                   data={"pending_proposals": props, "status": status})
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Evolution show failed: {exc}")
+
+    def _h_evolve_apply(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ee    = self._get_evolution_engine()
+            props = ee.pending_proposals()
+            if not props:
+                return CommandResponse(
+                    ok=False, command=str(intent),
+                    message="No pending proposals to apply. Run 'evolve' first.",
+                )
+            result = ee.apply_adjustments(props)
+            msg    = (
+                f"Evolution applied: {result.applied_count} change(s)  "
+                f"skipped={result.skipped_count}  evo_id={result.evo_id}"
+            )
+            return CommandResponse(
+                ok=True, command=str(intent), message=msg,
+                data=result.to_dict(),
+                warnings=result.errors,
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Evolution apply failed: {exc}")
+
+    def _h_evolve_rollback(self, intent: ParsedIntent) -> CommandResponse:
+        n = int(intent.params.get("n", 1))
+        try:
+            ee     = self._get_evolution_engine()
+            result = ee.rollback(last_n=n)
+            if result.errors:
+                return CommandResponse(ok=False, command=str(intent),
+                                       message=f"Rollback failed: {result.errors[0]}")
+            msg = (
+                f"Rolled back {result.rolled_back} evolution step(s).  "
+                f"evo_ids={result.evo_ids}"
+            )
+            return CommandResponse(ok=True, command=str(intent), message=msg,
+                                   data=result.to_dict())
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Evolution rollback failed: {exc}")
+
+    def _h_evolve_history(self, intent: ParsedIntent) -> CommandResponse:
+        limit = int(intent.params.get("limit", 10))
+        try:
+            ee      = self._get_evolution_engine()
+            entries = ee.history(limit=limit)
+            lines   = []
+            for e in entries:
+                ts     = str(e.get("ts", ""))[:19].replace("T", " ")
+                action = e.get("action", "?")
+                evo_id = e.get("evo_id", "?")[:8]
+                n_prop = len(e.get("proposals", []))
+                lines.append(f"  {ts}  [{action}]  id={evo_id}  proposals={n_prop}")
+            msg = f"Last {len(entries)} evolution log entries:\n" + "\n".join(lines)
+            return CommandResponse(ok=True, command=str(intent), message=msg,
+                                   data={"history": entries})
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Evolution history failed: {exc}")
 
     # ------------------------------------------------------------------
     # History
