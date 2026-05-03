@@ -1,0 +1,40 @@
+{
+  "started_at": "2026-05-03T07:17:17.160508+00:00",
+  "mode": "live",
+  "version": "1.0.0",
+  "integration": {
+    "all_ready": true,
+    "modules": {
+      "core": true,
+      "auto_evolution": true,
+      "profit_engine": true,
+      "web_intelligence": true,
+      "multi_ia": true,
+      "reports": true
+    },
+    "errors": {},
+    "mode": "live"
+  },
+  "pipelines": {
+    "intelligence": {
+      "mode": "dry_run",
+      "interval_seconds": 3600
+    },
+    "financial": {
+      "mode": "dry_run",
+      "interval_seconds": 1800
+    },
+    "evolution": {
+      "mode": "dry_run",
+      "interval_seconds": 86400
+    },
+    "consensus": {
+      "mode": "dry_run",
+      "interval_seconds": 7200
+    },
+    "reporting": {
+      "mode": "dry_run",
+      "interval_seconds": 3600
+    }
+  }
+}

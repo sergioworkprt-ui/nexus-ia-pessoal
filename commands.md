@@ -203,5 +203,53 @@
 
 ---
 
+## Live Mode — Modo de Produção
+
+### Iniciar / Parar
+
+| Comando | Descrição |
+|---|---|
+| `python nexus_live.py` | Inicia o NEXUS em modo LIVE (foreground) |
+| `python nexus_live.py --config config/live_runtime.json` | Inicia com configuração personalizada |
+| `python nexus_live.py --dry-run` | Inicia em modo seguro (todos os pipelines em dry_run) |
+| `python nexus_live.py --no-scheduler` | Inicia sem agendamento automático (runs manuais apenas) |
+
+### CLI Controller (`nexus_cli.py`)
+
+| Comando | Descrição |
+|---|---|
+| `python nexus_cli.py start` | Inicia o runtime LIVE em foreground |
+| `python nexus_cli.py start --detach` | Inicia em background (escreve PID file) |
+| `python nexus_cli.py start --config config/live_runtime.json` | Inicia com config específica |
+| `python nexus_cli.py start --dry-run` | Inicia com todos os pipelines em modo dry_run |
+| `python nexus_cli.py stop` | Envia SIGTERM ao processo em background (leitura do PID file) |
+| `python nexus_cli.py status` | Mostra estado completo do runtime (módulos, pipelines, audit log) |
+| `python nexus_cli.py status --json` | Estado em formato JSON estruturado |
+| `python nexus_cli.py run intelligence` | Executa o pipeline de inteligência imediatamente |
+| `python nexus_cli.py run financial` | Executa o pipeline financeiro imediatamente |
+| `python nexus_cli.py run evolution` | Executa o pipeline de auto-evolução imediatamente |
+| `python nexus_cli.py run consensus` | Executa o pipeline de consenso multi-IA imediatamente |
+| `python nexus_cli.py run reporting` | Executa o pipeline de relatórios imediatamente |
+| `python nexus_cli.py run <pipeline> --export <path>` | Executa e exporta resultado para JSON |
+| `python nexus_cli.py report` | Corre todos os pipelines e gera relatório consolidado |
+| `python nexus_cli.py report --pipeline <nome>` | Relatório de um pipeline específico |
+| `python nexus_cli.py report --export reports/live/report.json` | Exporta relatório para path específico |
+
+### Ficheiros de Configuração
+
+| Ficheiro | Descrição |
+|---|---|
+| `config/live_runtime.json` | Configuração principal do runtime LIVE (todos os módulos) |
+| `config/live_pipelines.json` | Agendamento, dependências e triggers por pipeline |
+
+### Pastas de Saída (LIVE)
+
+| Pasta | Descrição |
+|---|---|
+| `logs/live/` | Logs e audit chain do modo LIVE (`audit_live.jsonl`, `nexus.pid`) |
+| `reports/live/` | Relatórios exportados automaticamente pelo pipeline de reporting |
+
+---
+
 *Documentação gerada automaticamente pelo sistema NEXUS.*  
 *Para ajuda detalhada sobre um comando: `nexus help <comando>`*
