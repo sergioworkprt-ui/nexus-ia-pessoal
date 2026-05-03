@@ -340,6 +340,31 @@ def cmd_run(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    """Launch the read-only NEXUS dashboard web server."""
+    import sys
+    _ROOT_str = str(_ROOT)
+    if _ROOT_str not in sys.path:
+        sys.path.insert(0, _ROOT_str)
+
+    from dashboard import DashboardServer
+
+    host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
+    port = getattr(args, "port", 7000) or 7000
+
+    _header("NEXUS DASHBOARD")
+    _ok(f"Starting dashboard at http://{host}:{port}")
+    print(f"  Routes  : / | /pipelines | /signals | /risk | /audit | /reports | /limits")
+    print(f"  Refresh : auto every 30 seconds")
+    print(f"  Stop    : Ctrl+C\n")
+
+    srv = DashboardServer(host=host, port=port)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        _ok("Dashboard stopped.")
+
+
 def cmd_report(args: argparse.Namespace) -> None:
     """Run all pipelines and generate a consolidated status report."""
     _header("NEXUS REPORT")
@@ -423,6 +448,9 @@ Examples:
   python nexus_cli.py run financial --export reports/live/financial.json
   python nexus_cli.py report
   python nexus_cli.py report --pipeline consensus --export reports/live/consensus.json
+  python nexus_cli.py dashboard
+  python nexus_cli.py dashboard --port 8080
+  python nexus_cli.py dashboard --host 0.0.0.0 --port 7000
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
@@ -452,6 +480,13 @@ Examples:
     p_rep.add_argument("--config",   metavar="PATH", help="Path to live_runtime.json.")
     p_rep.add_argument("--export",   metavar="PATH", help="Output JSON path (default: reports/live/).")
 
+    # dashboard
+    p_dash = sub.add_parser("dashboard", help="Launch the read-only NEXUS web dashboard.")
+    p_dash.add_argument("--host", default="127.0.0.1", metavar="HOST",
+                        help="Bind address (default: 127.0.0.1).")
+    p_dash.add_argument("--port", default=7000, type=int, metavar="PORT",
+                        help="Port to listen on (default: 7000).")
+
     return parser
 
 
@@ -464,11 +499,12 @@ def main() -> int:
         return 0
 
     dispatch = {
-        "start":  cmd_start,
-        "stop":   cmd_stop,
-        "status": cmd_status,
-        "run":    cmd_run,
-        "report": cmd_report,
+        "start":     cmd_start,
+        "stop":      cmd_stop,
+        "status":    cmd_status,
+        "run":       cmd_run,
+        "report":    cmd_report,
+        "dashboard": cmd_dashboard,
     }
     dispatch[args.command](args)
     return 0
