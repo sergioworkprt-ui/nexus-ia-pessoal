@@ -6,3 +6,6 @@ venv/
 .DS_Store
 logs/nexus.log
 logs/live/stdout.log
+logs/live/audit_live.jsonl
+logs/live/startup_status.json
+logs/live/nexus.pid
