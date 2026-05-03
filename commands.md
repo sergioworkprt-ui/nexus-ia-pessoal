@@ -393,6 +393,35 @@ Disable safe mode for unattended scripts:
 ```python
 engine.safe_mode = False
 ```
+## Dashboard — Interface Web (Fase 8)
+
+### Iniciar
+
+| Comando | Descrição |
+|---|---|
+| `python nexus_cli.py dashboard` | Abre o dashboard em http://127.0.0.1:7000 |
+| `python nexus_cli.py dashboard --port 8080` | Dashboard numa porta personalizada |
+| `python nexus_cli.py dashboard --host 0.0.0.0 --port 7000` | Abre para todas as interfaces |
+
+### Rotas disponíveis
+
+| Rota | Descrição |
+|---|---|
+| `http://localhost:7000/` | Visão geral — modo, módulos, pipelines, uptime |
+| `http://localhost:7000/pipelines` | Configuração e estado de cada pipeline |
+| `http://localhost:7000/signals` | Últimos sinais do Signal Engine |
+| `http://localhost:7000/risk` | Métricas de risco e drawdown |
+| `http://localhost:7000/audit` | Últimas 50 entradas do log de auditoria |
+| `http://localhost:7000/reports` | Lista de relatórios exportados (reports/live/) |
+| `http://localhost:7000/reports/<nome>` | Visualização de um relatório JSON |
+| `http://localhost:7000/limits` | Limites e configurações do runtime |
+
+### Características
+
+- Servidor Python puro (`http.server`) — sem dependências externas
+- Apenas leitura — não modifica o estado do runtime
+- Auto-refresh a cada 30 segundos
+- Lê ficheiros em tempo real: `logs/live/*.json`, `data/runtime/*.json`, `reports/live/*.json`
 
 ### Python API
 
@@ -507,6 +536,17 @@ print(result.risk.to_dict())
 entry = se.evaluate_entry("ETH")
 exit_ = se.evaluate_exit("BTC")
 risk  = se.compute_risk("AAPL")
+from dashboard import DashboardServer, start_dashboard
+
+# Foreground (bloqueante)
+start_dashboard(host="127.0.0.1", port=7000)
+
+# Background (thread)
+srv = DashboardServer(host="127.0.0.1", port=7000)
+srv.start_background()
+print(f"Dashboard em {srv.url}")
+# ...
+srv.stop()
 ```
 
 ---
