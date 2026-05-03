@@ -262,6 +262,12 @@ class CommandEngine:
             "list_pipelines":        self._h_show_pipeline,
             "list_modules":          self._h_show_module,
             "check_audit":           self._h_generate_audit,
+            # Signal Engine
+            "signal_generate":       self._h_signal_generate,
+            "signal_entry":          self._h_signal_entry,
+            "signal_exit":           self._h_signal_exit,
+            "signal_risk":           self._h_signal_risk,
+            "signal_history":        self._h_signal_history,
         }
 
     # ── run ──────────────────────────────────────────────────────────────
@@ -651,6 +657,112 @@ class CommandEngine:
                 ok=False, command=str(intent),
                 message=f"State reset failed: {exc}",
             )
+
+    # ------------------------------------------------------------------
+    # Signal Engine handlers
+    # ------------------------------------------------------------------
+
+    def _get_signal_engine(self):
+        """Build a SignalEngine from the current runtime."""
+        from nexus_runtime.signal_engine import SignalEngine
+        return SignalEngine(
+            modules=self._runtime.integration.modules,
+            config=self._runtime._config,
+            bus=self._runtime.bus,
+            reports=getattr(self._runtime.integration.modules, "reports", None),
+        )
+
+    def _h_signal_generate(self, intent: ParsedIntent) -> CommandResponse:
+        symbol = intent.params.get("symbol", "").upper()
+        if not symbol:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Symbol required. Example: signal BTC")
+        try:
+            se     = self._get_signal_engine()
+            result = se.generate_signal(symbol)
+            d      = result.to_dict()
+            side   = d.get("side", "hold").upper()
+            strength = d.get("strength", 0.0)
+            risk_score = d.get("risk", {}).get("risk_score", 0.0) if d.get("risk") else 0.0
+            entry_flag = d.get("entry", {}).get("should_enter", False) if d.get("entry") else False
+            msg = (
+                f"{symbol}: {side}  strength={strength:.2f}  risk={risk_score:.2f}"
+                + ("  → ENTER" if entry_flag else "  → HOLD")
+            )
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=d,
+                                   warnings=[w for e in result.errors for w in [f"⚠ {e}"]])
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Signal generation failed: {exc}")
+
+    def _h_signal_entry(self, intent: ParsedIntent) -> CommandResponse:
+        symbol = intent.params.get("symbol", "").upper()
+        if not symbol:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Symbol required. Example: entry BTC")
+        try:
+            se     = self._get_signal_engine()
+            entry  = se.evaluate_entry(symbol)
+            d      = entry.to_dict()
+            side   = d.get("side", "hold").upper()
+            conf   = d.get("confidence", 0.0)
+            go     = "✓ ENTER" if d.get("should_enter") else "✗ WAIT"
+            msg    = f"{symbol}: {go}  side={side}  confidence={conf:.2f}"
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=d)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Entry evaluation failed: {exc}")
+
+    def _h_signal_exit(self, intent: ParsedIntent) -> CommandResponse:
+        symbol = intent.params.get("symbol", "").upper()
+        if not symbol:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Symbol required. Example: exit BTC")
+        try:
+            se    = self._get_signal_engine()
+            ev    = se.evaluate_exit(symbol)
+            d     = ev.to_dict()
+            go    = "✓ EXIT" if d.get("should_exit") else "✗ HOLD"
+            urg   = d.get("urgency", "low")
+            msg   = f"{symbol}: {go}  urgency={urg}  pnl_estimate={d.get('pnl_estimate', 0):.4f}"
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=d)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Exit evaluation failed: {exc}")
+
+    def _h_signal_risk(self, intent: ParsedIntent) -> CommandResponse:
+        symbol = intent.params.get("symbol", "").upper()
+        if not symbol:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Symbol required. Example: analyze risk BTC")
+        try:
+            se   = self._get_signal_engine()
+            risk = se.compute_risk(symbol)
+            d    = risk.to_dict()
+            msg  = (
+                f"{symbol}: risk_score={d['risk_score']:.2f}  "
+                f"vol={d['volatility']:.2%}  drawdown={d['drawdown_pct']:.2%}  "
+                f"pos_size={d['position_size']:.2%}"
+            )
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=d,
+                                   warnings=risk.alerts)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Risk computation failed: {exc}")
+
+    def _h_signal_history(self, intent: ParsedIntent) -> CommandResponse:
+        limit = int(intent.params.get("limit", 10))
+        try:
+            se      = self._get_signal_engine()
+            entries = se.history(limit=limit)
+            return CommandResponse(
+                ok=True, command=str(intent),
+                message=f"Last {len(entries)} signals in engine history.",
+                data={"signals": entries},
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Signal history failed: {exc}")
 
     # ------------------------------------------------------------------
     # History

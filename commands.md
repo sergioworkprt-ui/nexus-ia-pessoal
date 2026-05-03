@@ -416,5 +416,100 @@ print(engine.help("set limit"))  # help for a specific command
 
 ---
 
+## Signal Engine — Chat Commands
+
+The Signal Engine (`nexus_runtime/signal_engine.py`) fuses pattern detection,
+sentiment analysis, and multi-IA consensus into actionable trade signals.
+All five commands are available through the natural-language `CommandEngine`.
+
+### Commands
+
+| Natural-language input | Action |
+|---|---|
+| `signal <symbol>` | Full signal pipeline: patterns + sentiment + IA consensus |
+| `analyze <symbol>` | Alias for `signal` |
+| `scan <symbol>` | Alias for `signal` (synonym) |
+| `evaluate <symbol>` | Alias for `signal` (synonym) |
+| `entry <symbol>` | Entry readiness only (no IA consensus — faster) |
+| `buy <symbol>` | Alias for `entry` |
+| `exit <symbol>` | Exit readiness for an open position |
+| `sell <symbol>` | Alias for `exit` |
+| `analyze risk <symbol>` | Risk metrics only: volatility, drawdown, position size |
+| `show signal` | Last 10 signals in engine history |
+| `show signal 20` | Last N signals in engine history |
+
+### Examples
+
+```
+signal BTC
+→ BTC: BUY  strength=0.72  risk=0.12  → ENTER
+
+entry ETH
+→ ETH: ✓ ENTER  side=BUY  confidence=0.68
+
+exit BTC
+→ BTC: ✗ HOLD  urgency=low  pnl_estimate=0.0215
+
+analyze risk AAPL
+→ AAPL: risk_score=0.08  vol=1.20%  drawdown=0.00%  pos_size=5.00%
+
+show signal 5
+→ Last 5 signals in engine history.
+```
+
+### Signal output fields
+
+| Field | Description |
+|---|---|
+| `side` | `buy` / `sell` / `hold` — directional recommendation |
+| `strength` | 0–1 — signal conviction (0 = no view, 1 = maximum) |
+| `entry.should_enter` | Boolean — whether entry conditions are met |
+| `entry.confidence` | 0–1 composite score (pattern × 0.4 + sentiment × 0.2 + consensus × 0.4) |
+| `entry.pattern_score` | 0–1 from PatternDetector (0.5 = neutral) |
+| `entry.sentiment_score` | 0–1 from NewsAnalyzer (0.5 = neutral) |
+| `entry.consensus_score` | 0–1 from multi-IA vote (0.5 = neutral) |
+| `exit.should_exit` | Boolean — whether exit is recommended |
+| `exit.urgency` | `low` / `medium` / `high` / `immediate` |
+| `risk.volatility` | ATR/price normalised volatility |
+| `risk.drawdown_pct` | Current drawdown from equity peak |
+| `risk.position_size` | Suggested position size (fraction of capital, quarter-Kelly, max 5%) |
+| `risk.stop_loss_pct` | Suggested stop-loss distance |
+| `risk.take_profit_pct` | Suggested take-profit distance (2× stop-loss) |
+| `risk.risk_score` | 0–1 composite risk score |
+
+### Pipeline integration
+
+The Signal Engine runs automatically inside four pipelines:
+
+| Pipeline | Signal Engine role |
+|---|---|
+| `intelligence` | Generates full signals for symbols with detected patterns (max 5 per cycle) |
+| `financial` | Computes risk metrics for all open positions |
+| `consensus` | Runs IA consensus vote per symbol found in intelligence patterns |
+| `reporting` | Exports last 10 signals to `reports/live/signals_latest.json` |
+
+### Python API
+
+```python
+from nexus_runtime import NexusRuntime
+from nexus_runtime.signal_engine import SignalEngine
+
+runtime = NexusRuntime.live()
+runtime.start()
+
+se = SignalEngine.from_runtime(runtime)
+
+result = se.generate_signal("BTC")
+print(result.side, result.strength)
+print(result.entry.should_enter, result.entry.reasons)
+print(result.risk.to_dict())
+
+entry = se.evaluate_entry("ETH")
+exit_ = se.evaluate_exit("BTC")
+risk  = se.compute_risk("AAPL")
+```
+
+---
+
 *Documentação gerada automaticamente pelo sistema NEXUS.*  
 *Para ajuda detalhada sobre um comando: `nexus help <comando>`*
