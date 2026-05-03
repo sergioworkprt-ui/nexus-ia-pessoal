@@ -1,0 +1,74 @@
+{
+  "_comment": "NEXUS Live Pipeline Schedule — per-pipeline overrides and metadata.",
+  "version": "1.0.0",
+  "pipelines": {
+    "intelligence": {
+      "enabled": true,
+      "mode": "enabled",
+      "interval_seconds": 3600,
+      "description": "Fetches market intelligence, detects patterns, scores sentiment.",
+      "triggers": ["manual", "scheduled"],
+      "dependencies": [],
+      "timeout_seconds": 120,
+      "retry_on_failure": true,
+      "max_retries": 2
+    },
+    "financial": {
+      "enabled": true,
+      "mode": "enabled",
+      "interval_seconds": 1800,
+      "description": "Analyses portfolio, backtests strategies, monitors risk limits.",
+      "triggers": ["manual", "scheduled"],
+      "dependencies": ["intelligence"],
+      "timeout_seconds": 90,
+      "retry_on_failure": true,
+      "max_retries": 1
+    },
+    "evolution": {
+      "enabled": true,
+      "mode": "dry_run",
+      "interval_seconds": 86400,
+      "description": "Scans codebase for improvements; applies patches in dry_run (no writes).",
+      "triggers": ["manual", "scheduled"],
+      "dependencies": [],
+      "timeout_seconds": 300,
+      "retry_on_failure": false,
+      "max_retries": 0
+    },
+    "consensus": {
+      "enabled": true,
+      "mode": "enabled",
+      "interval_seconds": 7200,
+      "description": "Multi-IA consensus on strategic decisions; escalates contradictions.",
+      "triggers": ["manual", "scheduled"],
+      "dependencies": ["intelligence", "financial"],
+      "timeout_seconds": 180,
+      "retry_on_failure": true,
+      "max_retries": 1
+    },
+    "reporting": {
+      "enabled": true,
+      "mode": "enabled",
+      "interval_seconds": 3600,
+      "description": "Generates structured reports and exports them to reports/live/.",
+      "triggers": ["manual", "scheduled", "on_pipeline_complete"],
+      "dependencies": [],
+      "timeout_seconds": 60,
+      "retry_on_failure": true,
+      "max_retries": 2
+    }
+  },
+  "schedule_notes": {
+    "intelligence": "Every 1 hour — primary data ingestion loop.",
+    "financial":    "Every 30 minutes — high-frequency risk & portfolio checks.",
+    "evolution":    "Once per day — safe dry_run code analysis only.",
+    "consensus":    "Every 2 hours — multi-IA strategic alignment check.",
+    "reporting":    "Every 1 hour — audit-safe report generation and export."
+  },
+  "event_triggers": {
+    "RISK_BREACH":            ["reporting"],
+    "PATTERN_DETECTED":       ["financial", "consensus"],
+    "CONSENSUS_ESCALATED":    ["reporting"],
+    "KILL_SWITCH_TRIGGERED":  ["reporting"]
+  }
+}

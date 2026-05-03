@@ -1,0 +1,71 @@
+{
+  "_comment": "NEXUS Live Runtime Configuration — production settings.",
+  "mode": "live",
+  "log_level": "info",
+  "audit_log_path": "logs/live/audit_live.jsonl",
+  "intelligence": {
+    "mode": "enabled",
+    "interval_seconds": 3600,
+    "max_urls": 10,
+    "sentiment_threshold": 0.3,
+    "enabled_patterns": [
+      "breakout",
+      "breakdown",
+      "anomaly_price",
+      "anomaly_volume",
+      "bullish_divergence",
+      "bearish_divergence"
+    ]
+  },
+  "financial": {
+    "mode": "enabled",
+    "interval_seconds": 1800,
+    "max_drawdown_alert": 0.10,
+    "sharpe_alert": 0.5,
+    "backtest_on_start": false
+  },
+  "evolution": {
+    "mode": "dry_run",
+    "interval_seconds": 86400,
+    "max_patches_per_cycle": 5,
+    "auto_apply_patches": false,
+    "scan_paths": [
+      "core",
+      "auto_evolution",
+      "profit_engine",
+      "web_intelligence",
+      "multi_ia",
+      "reports",
+      "nexus_runtime"
+    ]
+  },
+  "consensus": {
+    "mode": "enabled",
+    "interval_seconds": 7200,
+    "n_agents": 3,
+    "agreement_alert": 0.40,
+    "escalate_on_contradiction": true
+  },
+  "reporting": {
+    "mode": "enabled",
+    "interval_seconds": 3600,
+    "auto_export_json": true,
+    "export_dir": "reports/live",
+    "report_types": [
+      "financial",
+      "intelligence",
+      "evolution",
+      "multi_ia"
+    ]
+  },
+  "scheduler": {
+    "enabled": true,
+    "tick_interval_s": 1.0,
+    "max_concurrent": 4
+  },
+  "state": {
+    "checkpoint_path": "data/runtime/live_checkpoint.json",
+    "checkpoint_interval_s": 300,
+    "max_checkpoints": 5
+  }
+}

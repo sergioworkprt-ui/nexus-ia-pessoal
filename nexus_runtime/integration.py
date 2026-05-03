@@ -149,7 +149,7 @@ class NexusIntegration:
             r_cfg  = ReportsConfig(
                 audit_log_path=self._config.audit_log_path,
                 auto_export_json=self._config.reporting.auto_export_json,
-                export_dir=self._config.reporting.export_dir,
+                report_export_dir=self._config.reporting.export_dir,
             )
             rep = Reports.from_core(core_ref, r_cfg) if core_ref else Reports(r_cfg)
             rep.start()
