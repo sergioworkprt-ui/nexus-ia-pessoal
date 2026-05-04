@@ -7,3 +7,39 @@
 {"ts": "2026-05-03T07:17:21.163100+00:00", "event": "checkpoint_saved", "checkpoint_id": "b12802bd-c37", "cycle": 6}
 {"entry_id": "3bcd4c5f-b486-4d24-b8b0-39ca34ab5ea1", "event_type": "system_stop", "severity": "info", "actor": "reports", "action": "stop", "target": "", "outcome": "Reports subsystem stopped.", "detail": {}, "timestamp": "2026-05-03T07:17:21.163401+00:00", "seq": 3, "prev_hash": "96aa0d651248bce8d75c8aeb842945829dd973904cd80de0e257254e935acf6f", "entry_hash": "b375f3ebec93e76d5c12af034a9e1907b48d2ba7b8297ecb4e446b5ffc62773a"}
 {"ts": "2026-05-03T07:17:21.264052+00:00", "event": "shutdown_complete"}
+{"ts": "2026-05-04T10:07:19.974398+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:07:19.975708+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.001 BTC @ 50000.00  status=simulated"}}
+{"ts": "2026-05-04T10:07:54.393849+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:07:54.395095+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.001 BTC @ 50000.00  status=simulated"}}
+{"ts": "2026-05-04T10:07:54.396031+00:00", "event": "ibkr_close_position", "data": {"detail": "BTC  pnl=+0.0000  price=50000.00"}}
+{"ts": "2026-05-04T10:08:20.928864+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:08:20.930203+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.001 BTC @ 50000.00  status=simulated"}}
+{"ts": "2026-05-04T10:08:20.931164+00:00", "event": "ibkr_close_position", "data": {"detail": "BTC  pnl=+0.0000  price=50000.00"}}
+{"ts": "2026-05-04T10:08:20.931996+00:00", "event": "ibkr_connect", "data": {"detail": "mode=semi  balance=800.00"}}
+{"ts": "2026-05-04T10:08:20.932785+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.01 ETH @ 3000.00  status=pending"}}
+{"ts": "2026-05-04T10:08:20.934043+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.01 ETH @ 3000.00  status=pending"}}
+{"ts": "2026-05-04T10:08:27.950280+00:00", "event": "ibkr_connect", "data": {"detail": "mode=semi  balance=800.00"}}
+{"ts": "2026-05-04T10:08:27.951218+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.01 ETH @ 3000.00  status=pending"}}
+{"ts": "2026-05-04T10:08:27.952237+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.01 ETH @ 3000.00  status=pending"}}
+{"ts": "2026-05-04T10:09:05.852092+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:09:05.853212+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.001 BTC @ 50000.00  status=simulated"}}
+{"ts": "2026-05-04T10:09:05.854092+00:00", "event": "ibkr_close_position", "data": {"detail": "BTC  pnl=+0.0000  price=50000.00"}}
+{"ts": "2026-05-04T10:09:05.854846+00:00", "event": "ibkr_connect", "data": {"detail": "mode=semi  balance=800.00"}}
+{"ts": "2026-05-04T10:09:05.855674+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.01 ETH @ 3000.00  status=pending"}}
+{"ts": "2026-05-04T10:09:05.856066+00:00", "event": "ibkr_confirm_pending", "data": {"detail": "order_id=839484f8-e22  buy 0.01 ETH"}}
+{"ts": "2026-05-04T10:09:05.856969+00:00", "event": "ibkr_safe_mode", "data": {"detail": "entered: test"}}
+{"ts": "2026-05-04T10:09:26.824917+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:09:32.634213+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:10:01.811483+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:10:01.812682+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.001 BTC @ 50000.00  status=simulated"}}
+{"ts": "2026-05-04T10:10:08.708590+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:10:08.709695+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.001 BTC @ 50000.00  status=simulated"}}
+{"ts": "2026-05-04T10:10:33.245728+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:10:33.246694+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.001 BTC @ 50000.00  status=simulated"}}
+{"ts": "2026-05-04T10:10:33.247571+00:00", "event": "ibkr_close_position", "data": {"detail": "BTC  pnl=+0.0000  price=50000.00"}}
+{"ts": "2026-05-04T10:10:33.248108+00:00", "event": "ibkr_connect", "data": {"detail": "mode=semi  balance=800.00"}}
+{"ts": "2026-05-04T10:10:33.248808+00:00", "event": "ibkr_place_order", "data": {"detail": "buy 0.01 ETH @ 3000.00  status=pending"}}
+{"ts": "2026-05-04T10:10:33.249129+00:00", "event": "ibkr_confirm_pending", "data": {"detail": "order_id=4ca09b5f-85c  buy 0.01 ETH"}}
+{"ts": "2026-05-04T10:10:33.250883+00:00", "event": "ibkr_connect", "data": {"detail": "mode=paper  balance=800.00"}}
+{"ts": "2026-05-04T10:10:33.251173+00:00", "event": "ibkr_safe_mode", "data": {"detail": "entered: test"}}
+{"ts": "2026-05-04T10:10:33.251771+00:00", "event": "ibkr_safe_mode", "data": {"detail": "exited"}}
