@@ -12,13 +12,14 @@ from typing import Any, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 
 _NAV_LINKS: List[Tuple[str, str]] = [
-    ("/",          "Overview"),
-    ("/pipelines", "Pipelines"),
-    ("/signals",   "Signals"),
-    ("/risk",      "Risk"),
-    ("/audit",     "Audit"),
-    ("/reports",   "Reports"),
-    ("/limits",    "Limits"),
+    ("/",           "Overview"),
+    ("/pipelines",  "Pipelines"),
+    ("/signals",    "Signals"),
+    ("/risk",       "Risk"),
+    ("/evolution",  "Evolution"),
+    ("/audit",      "Audit"),
+    ("/reports",    "Reports"),
+    ("/limits",     "Limits"),
 ]
 
 _CSS = """

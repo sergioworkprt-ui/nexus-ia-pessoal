@@ -198,6 +198,43 @@ def read_pipeline_status() -> Dict[str, Any]:
     return result
 
 
+def read_evolution_log(limit: int = 20) -> List[Dict[str, Any]]:
+    """Read entries from logs/evolution_live.jsonl (newest first)."""
+    entries = _load_jsonl("logs/evolution_live.jsonl", limit=limit * 2)
+    return list(reversed(entries[-limit:]))
+
+
+def read_evolution_summary() -> Dict[str, Any]:
+    """Read the last evolution summary exported by the reporting pipeline."""
+    data = _load_json("reports/live/evolution_summary.json") or {}
+    return data
+
+
+def read_evolution_data() -> Dict[str, Any]:
+    log     = read_evolution_log(limit=20)
+    summary = read_evolution_summary()
+
+    # Extract pending proposals from the most recent non-rollback log entry
+    pending: List[Dict[str, Any]] = []
+    active_adjustments: List[Dict[str, Any]] = []
+    for entry in log:
+        if entry.get("action") == "apply":
+            # Most recent apply contains current active adjustments
+            if not active_adjustments:
+                active_adjustments = entry.get("proposals", [])
+            break
+
+    # Pending come from evolution_summary if present
+    pending = summary.get("pending_proposals", [])
+
+    return {
+        "log":                log,
+        "summary":            summary,
+        "pending_proposals":  pending,
+        "active_adjustments": active_adjustments,
+    }
+
+
 def read_overview() -> Dict[str, Any]:
     startup = read_startup_status()
     checkpoint = read_checkpoint()

@@ -19,6 +19,7 @@ VERBS: Set[str] = {
     "enable", "disable", "increase", "decrease", "set",
     "pause", "resume", "reset", "list", "check",
     "signal", "analyze", "entry", "exit",
+    "evolve", "apply", "rollback", "propose",
 }
 
 TARGETS: Set[str] = {
@@ -562,6 +563,57 @@ class CommandRegistry:
                                 description="Trading symbol."),
                 ],
                 examples=["analyze risk BTC", "risk BTC"],
+            ),
+
+            # ── Evolution Engine ───────────────────────────���─────────────────
+            CommandDef(
+                verb="evolve", target="evolution",
+                handler_key="evolve_run",
+                description="Run evaluate_performance + learn_from_signals + propose_adjustments. Returns summary.",
+                examples=["evolve", "run evolution", "NEXUS, evolui."],
+            ),
+            CommandDef(
+                verb="show", target="evolution",
+                handler_key="evolve_show",
+                description="Show pending evolution proposals and last evolution step.",
+                aliases=["propose evolution", "show proposals"],
+                examples=["show evolution", "mostra propostas de evolução"],
+            ),
+            CommandDef(
+                verb="propose", target="evolution",
+                handler_key="evolve_show",
+                description="Show pending evolution proposals (alias for 'show evolution').",
+                examples=["propose evolution", "show evolution proposals"],
+            ),
+            CommandDef(
+                verb="apply", target="evolution",
+                handler_key="evolve_apply",
+                description="Apply all pending evolution proposals to the live config.",
+                requires_confirm=True,
+                examples=["apply evolution", "NEXUS, aplica evolução."],
+            ),
+            CommandDef(
+                verb="rollback", target="evolution",
+                handler_key="evolve_rollback",
+                description="Rollback the last applied evolution step.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("n", "int", default=1,
+                                description="Number of evolution steps to revert."),
+                ],
+                examples=["rollback evolution", "rollback evolution 2",
+                          "NEXUS, reverte a última evolução."],
+            ),
+            CommandDef(
+                verb="show", target="evolution",
+                handler_key="evolve_history",
+                description="Show evolution history (last N steps).",
+                aliases=["show evolution history"],
+                params=[
+                    ParamSchema("limit", "int", default=10,
+                                description="Number of history entries to show."),
+                ],
+                examples=["show evolution history", "show evolution history 5"],
             ),
         ]
 
