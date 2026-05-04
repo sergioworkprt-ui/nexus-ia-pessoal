@@ -56,6 +56,7 @@ from .runtime_config import (
     ReportingConfig,
     SchedulerConfig,
     StateConfig,
+    IBKRConfig,
 )
 
 # Events
@@ -95,6 +96,11 @@ from .evolution_engine import (
     RollbackResult,
 )
 
+# IBKR Integration
+from .ibkr_integration import IBKRIntegration, OrderResult, Position
+from .capital_manager import CapitalManager, CapitalState
+from .risk_manager import RiskManager, RiskState
+
 # Runtime
 from .runtime import NexusRuntime
 
@@ -103,6 +109,7 @@ __all__ = [
     "RuntimeConfig", "RuntimeMode", "PipelineMode",
     "IntelligenceConfig", "FinancialConfig", "EvolutionConfig",
     "ConsensusConfig", "ReportingConfig", "SchedulerConfig", "StateConfig",
+    "IBKRConfig",
     # Events
     "Event", "EventBus", "EventType",
     # Scheduler
@@ -121,6 +128,10 @@ __all__ = [
     # Evolution Engine
     "EvolutionEngine", "PerformanceReport", "SignalLearning",
     "Proposal", "ApplyResult", "RollbackResult",
+    # IBKR Integration
+    "IBKRIntegration", "OrderResult", "Position",
+    "CapitalManager", "CapitalState",
+    "RiskManager", "RiskState",
     # Runtime
     "NexusRuntime",
 ]

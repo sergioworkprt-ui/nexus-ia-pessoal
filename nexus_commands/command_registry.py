@@ -20,6 +20,7 @@ VERBS: Set[str] = {
     "pause", "resume", "reset", "list", "check",
     "signal", "analyze", "entry", "exit",
     "evolve", "apply", "rollback", "propose",
+    "ibkr", "close", "confirm",
 }
 
 TARGETS: Set[str] = {
@@ -28,7 +29,12 @@ TARGETS: Set[str] = {
     "financial", "reporting", "scheduler", "limit",
     "status", "history", "checkpoint",
     "signal", "entry", "exit",
+    # IBKR targets
+    "positions", "balance", "capital", "orders",
+    "safe", "mode", "ibkr", "confirm", "close",
 }
+
+IBKR_MODES: Set[str] = {"paper", "semi", "auto"}
 
 PIPELINE_NAMES: Set[str] = {
     "intelligence", "financial", "evolution", "consensus", "reporting",
@@ -614,6 +620,143 @@ class CommandRegistry:
                                 description="Number of history entries to show."),
                 ],
                 examples=["show evolution history", "show evolution history 5"],
+            ),
+
+            # ── IBKR Integration ─────────────────────────────────────────────
+            CommandDef(
+                verb="ibkr", target="status",
+                handler_key="ibkr_status",
+                description="Show IBKR connection status, mode, balance, positions and risk.",
+                aliases=["show:ibkr"],
+                examples=["ibkr status", "show ibkr", "NEXUS, estado IBKR."],
+            ),
+            CommandDef(
+                verb="ibkr", target="positions",
+                handler_key="ibkr_positions",
+                description="List all open IBKR positions with PnL.",
+                examples=["ibkr positions", "mostra posições"],
+            ),
+            CommandDef(
+                verb="ibkr", target="balance",
+                handler_key="ibkr_balance",
+                description="Show IBKR account balance and capital bucket breakdown.",
+                examples=["ibkr balance", "ibkr saldo"],
+            ),
+            CommandDef(
+                verb="ibkr", target="orders",
+                handler_key="ibkr_orders",
+                description="List open and recent IBKR orders.",
+                examples=["ibkr orders", "ibkr ordens"],
+            ),
+            CommandDef(
+                verb="ibkr", target="mode",
+                handler_key="ibkr_enable_mode",
+                description="Set IBKR trading mode: paper | semi | auto.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("mode", "str", required=True,
+                                choices=["paper", "semi", "auto"],
+                                description="Trading mode."),
+                ],
+                examples=[
+                    "ibkr mode auto", "ibkr mode semi", "ibkr mode paper",
+                    "ibkr enable auto", "NEXUS, ativa modo automático.",
+                ],
+            ),
+            CommandDef(
+                verb="enable", target="ibkr",
+                handler_key="ibkr_enable_mode",
+                description="Enable IBKR trading mode (paper/semi/auto).",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("mode", "str", required=False,
+                                choices=["paper", "semi", "auto"],
+                                description="Mode to activate. Defaults to paper."),
+                ],
+                examples=[
+                    "enable auto", "enable semi", "enable paper",
+                    "enable ibkr auto", "NEXUS, ativa modo automático.",
+                ],
+            ),
+            CommandDef(
+                verb="ibkr", target="capital",
+                handler_key="ibkr_set_capital",
+                description="Set the hard capital limit NEXUS may deploy (euros/USD).",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("limit", "float", required=True,
+                                description="Maximum capital in account currency."),
+                ],
+                examples=[
+                    "ibkr set capital 1000", "ibkr capital 800",
+                    "NEXUS, usa no máximo 800 euros.",
+                ],
+            ),
+            CommandDef(
+                verb="set", target="capital",
+                handler_key="ibkr_set_capital",
+                description="Alias for 'ibkr capital LIMIT' — set the IBKR capital limit.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("limit", "float", required=True,
+                                description="Maximum capital in account currency."),
+                ],
+                examples=["set capital 1000", "set capital 500"],
+            ),
+            CommandDef(
+                verb="ibkr", target="close",
+                handler_key="ibkr_close",
+                description="Close an open IBKR position for a symbol.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Symbol to close (e.g. BTC, ETH, AAPL)."),
+                ],
+                examples=[
+                    "ibkr close BTC", "ibkr close ETH",
+                    "NEXUS, fecha BTC.", "fecha posição BTC",
+                ],
+            ),
+            CommandDef(
+                verb="close", target="ibkr",
+                handler_key="ibkr_close",
+                description="Alias for 'ibkr close SYMBOL'.",
+                requires_confirm=True,
+                params=[
+                    ParamSchema("symbol", "str", required=True,
+                                description="Symbol to close."),
+                ],
+                examples=["close BTC", "close ETH"],
+            ),
+            CommandDef(
+                verb="ibkr", target="safe",
+                handler_key="ibkr_safe_mode",
+                description="Enter IBKR safe mode — block all new trades immediately.",
+                requires_confirm=False,
+                examples=[
+                    "ibkr safe mode", "ibkr safe",
+                    "NEXUS, entra em safe mode.", "safe mode",
+                ],
+            ),
+            CommandDef(
+                verb="ibkr", target="resume",
+                handler_key="ibkr_resume",
+                description="Exit IBKR safe mode and resume normal trading operations.",
+                requires_confirm=True,
+                examples=[
+                    "ibkr resume", "resume ibkr",
+                    "NEXUS, retoma operações.", "sair de safe mode",
+                ],
+            ),
+            CommandDef(
+                verb="ibkr", target="confirm",
+                handler_key="ibkr_confirm",
+                description="Confirm a pending semi-mode order by order ID.",
+                params=[
+                    ParamSchema("order_id", "str", required=True,
+                                description="Order ID to confirm."),
+                ],
+                examples=["ibkr confirm ORD-001", "confirmar ordem ORD-001"],
             ),
         ]
 

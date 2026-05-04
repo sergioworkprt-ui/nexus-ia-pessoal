@@ -590,6 +590,251 @@ def render_evolution() -> str:
 
 
 # ---------------------------------------------------------------------------
+# /ibkr — IBKR Overview
+# ---------------------------------------------------------------------------
+
+def render_ibkr() -> str:
+    data    = R.read_ibkr_status()
+    capital = R.read_ibkr_capital()
+
+    mode    = data.get("mode", "paper").upper()
+    enabled = data.get("enabled", False)
+    n_pos   = data.get("n_positions", 0)
+    n_pend  = data.get("n_pending", 0)
+    risk    = capital.get("risk", {})
+    safe    = risk.get("in_safe_mode", False)
+    bal     = capital.get("initial_capital", 0.0)
+    avail   = capital.get("available_capital", 0.0)
+    limit   = capital.get("user_capital_limit", 0.0)
+    deployed = capital.get("total_deployed", 0.0)
+    in_rec  = capital.get("in_recovery_phase", True)
+    profit  = capital.get("nexus_profit", 0.0)
+    updated = data.get("updated", "—")
+
+    mode_color = {"PAPER": "muted", "SEMI": "warning", "AUTO": "success"}.get(mode, "muted")
+    enabled_b  = _badge("ENABLED", "success") if enabled else _badge("DISABLED", "muted")
+    safe_b     = _badge("SAFE MODE", "danger") if safe else _badge("ACTIVE", "success")
+    mode_b     = _badge(mode, mode_color)
+    rec_b      = _badge("IN RECOVERY", "warning") if in_rec else _badge("POST-RECOVERY", "success")
+
+    stats_html = f"""
+<div class="stat-row">
+    {stat_card("Mode", f"{mode_b}")}
+    {stat_card("Status", f"{enabled_b}")}
+    {stat_card("Trading", f"{safe_b}")}
+    {stat_card("Capital Phase", f"{rec_b}")}
+</div>
+<div class="stat-row">
+    {stat_card("Balance", f"{bal:,.2f}")}
+    {stat_card("User Limit", f"{limit:,.2f}")}
+    {stat_card("Deployed", f"{deployed:,.2f}")}
+    {stat_card("Available", f"{avail:,.2f}")}
+</div>
+<div class="stat-row">
+    {stat_card("Open Positions", str(n_pos))}
+    {stat_card("Pending Orders", str(n_pend))}
+    {stat_card("NEXUS Profit", f"{profit:+.2f}")}
+    {stat_card("Last Updated", updated[:19] if updated != "—" else "—")}
+</div>
+"""
+
+    safe_warn = ""
+    if safe:
+        reason = risk.get("safe_mode_reason", "")
+        safe_warn = f'<div class="alert alert-danger">SAFE MODE ACTIVE — All new trades blocked. Reason: {_esc(reason)}</div>'
+
+    # Risk metrics
+    dd = risk.get("current_drawdown", 0.0)
+    daily = risk.get("daily_risk_used", 0.0)
+    weekly = risk.get("weekly_risk_used", 0.0)
+    risk_rows = [
+        ["Daily Risk Used", f"{daily:.4f}", f"{daily/0.01:.0%} of 1% limit"],
+        ["Weekly Risk Used", f"{weekly:.4f}", f"{weekly/0.02:.0%} of 2% limit"],
+        ["Current Drawdown", f"{dd:.4f}", f"{dd/0.05:.0%} of 5% safe threshold"],
+    ]
+
+    # Links
+    links_html = """
+<div class="section-title">Detailed Views</div>
+<p>
+  <a href="/ibkr/positions">Open Positions</a> &nbsp;|&nbsp;
+  <a href="/ibkr/orders">Order Log</a> &nbsp;|&nbsp;
+  <a href="/ibkr/capital">Capital &amp; Buckets</a>
+</p>
+"""
+
+    body = f"""
+<h1>IBKR Integration</h1>
+<p class="subtitle">Read-only dashboard view. Use the command layer to change mode, set capital, or close positions.</p>
+{safe_warn}
+{stats_html}
+<div class="section-title">Risk Metrics</div>
+{data_table(["Metric", "Value", "vs. Limit"], risk_rows, "No risk data available.")}
+{links_html}
+"""
+    return page("IBKR", body, active="/ibkr")
+
+
+# ---------------------------------------------------------------------------
+# /ibkr/positions
+# ---------------------------------------------------------------------------
+
+def render_ibkr_positions() -> str:
+    positions = R.read_ibkr_positions()
+
+    rows = []
+    for p in positions:
+        pnl  = p.get("pnl", 0.0)
+        sign = "+" if pnl >= 0 else ""
+        pnl_badge = _badge(f"{sign}{pnl:.2f}", "success" if pnl >= 0 else "danger")
+        rows.append([
+            _esc(p.get("symbol", "?")),
+            _badge(p.get("side", "?").upper(), "success" if p.get("side") == "buy" else "warning"),
+            _esc(str(p.get("size", 0))),
+            _esc(f"{p.get('entry_price', 0.0):.4f}"),
+            _esc(f"{p.get('sl', 0.0):.4f}"),
+            _esc(f"{p.get('tp', 0.0):.4f}"),
+            pnl_badge,
+            _esc(str(p.get("order_id", "?"))[:12]),
+        ])
+
+    body = f"""
+<h1>IBKR Positions</h1>
+<p class="subtitle">All open IBKR positions (read from <code>data/ibkr/positions.json</code>).</p>
+<p><a href="/ibkr">← Back to IBKR Overview</a></p>
+{data_table(
+    ["Symbol", "Side", "Size", "Entry", "SL", "TP", "PnL", "Order ID"],
+    rows,
+    "No open positions."
+)}
+"""
+    return page("IBKR Positions", body, active="/ibkr")
+
+
+# ---------------------------------------------------------------------------
+# /ibkr/orders
+# ---------------------------------------------------------------------------
+
+def render_ibkr_orders() -> str:
+    orders = R.read_ibkr_orders()
+    pending = orders.get("pending", [])
+    recent  = orders.get("recent", [])
+    total   = orders.get("total_logged", 0)
+
+    def _order_row(o: dict) -> list:
+        status  = o.get("status", "?")
+        color   = {"simulated": "muted", "filled": "success", "closed": "muted",
+                   "pending": "warning", "rejected": "danger"}.get(status, "muted")
+        risk_amt = o.get("risk_amount", 0.0)
+        return [
+            _esc(str(o.get("ts", ""))[:19]),
+            _esc(o.get("order_id", "?")[:14]),
+            _esc(o.get("symbol", "?")),
+            _badge(o.get("side", "?").upper(), "success" if o.get("side") == "buy" else "warning"),
+            _esc(str(o.get("size", 0))),
+            _esc(f"{o.get('price', 0.0):.4f}"),
+            _badge(status, color),
+            _esc(f"{risk_amt:.4f}"),
+        ]
+
+    pending_rows = [_order_row(o) for o in pending]
+    recent_rows  = [_order_row(o) for o in recent]
+
+    body = f"""
+<h1>IBKR Orders</h1>
+<p class="subtitle">Pending orders require 'ibkr confirm ORDER_ID'. Log from <code>logs/ibkr_orders.jsonl</code> ({total} entries total).</p>
+<p><a href="/ibkr">← Back to IBKR Overview</a></p>
+<div class="section-title">Pending Orders (semi mode)</div>
+{data_table(
+    ["Timestamp", "Order ID", "Symbol", "Side", "Size", "Price", "Status", "Risk"],
+    pending_rows, "No pending orders."
+)}
+<div class="section-title">Recent Fills / Closed</div>
+{data_table(
+    ["Timestamp", "Order ID", "Symbol", "Side", "Size", "Price", "Status", "Risk"],
+    recent_rows, "No recent orders logged."
+)}
+"""
+    return page("IBKR Orders", body, active="/ibkr")
+
+
+# ---------------------------------------------------------------------------
+# /ibkr/capital
+# ---------------------------------------------------------------------------
+
+def render_ibkr_capital() -> str:
+    cap = R.read_ibkr_capital()
+
+    initial    = cap.get("initial_capital", 0.0)
+    recovered  = cap.get("recovered_capital", 0.0)
+    rec_gap    = cap.get("recovery_gap", 0.0)
+    limit      = cap.get("user_capital_limit", 0.0)
+    deployed   = cap.get("total_deployed", 0.0)
+    avail      = cap.get("available_capital", 0.0)
+    profit     = cap.get("nexus_profit", 0.0)
+    in_rec     = cap.get("in_recovery_phase", True)
+    buckets    = cap.get("buckets", {})
+    risk       = cap.get("risk", {})
+    updated    = cap.get("updated", "—")
+
+    tools_f    = buckets.get("tools_fund", 0.0)
+    reinvest_f = buckets.get("reinvest_fund", 0.0)
+    standby_f  = buckets.get("standby_fund", 0.0)
+
+    rec_b = _badge("IN RECOVERY", "warning") if in_rec else _badge("POST-RECOVERY", "success")
+    safe_b = _badge("SAFE MODE", "danger") if risk.get("in_safe_mode") else _badge("NORMAL", "success")
+
+    stats_html = f"""
+<div class="stat-row">
+    {stat_card("Capital Phase", f"{rec_b}")}
+    {stat_card("Trading State", f"{safe_b}")}
+    {stat_card("Initial Capital", f"{initial:,.2f}")}
+    {stat_card("Recovered", f"{recovered:,.2f}")}
+</div>
+<div class="stat-row">
+    {stat_card("User Limit", f"{limit:,.2f}")}
+    {stat_card("Deployed", f"{deployed:,.2f}")}
+    {stat_card("Available", f"{avail:,.2f}")}
+    {stat_card("NEXUS Profit", f"{profit:+.2f}")}
+</div>
+"""
+
+    bucket_rows = [
+        ["tools_fund (30%)",   f"{tools_f:,.2f}",    "Operational tools & infra costs"],
+        ["reinvest_fund (50%)", f"{reinvest_f:,.2f}", "Reinvested in new trades"],
+        ["standby_fund (20%)", f"{standby_f:,.2f}",  "Frozen — requires explicit user authorisation"],
+    ]
+
+    recovery_rows = [
+        ["Initial Capital",   f"{initial:,.2f}"],
+        ["Recovered So Far",  f"{recovered:,.2f}"],
+        ["Still to Recover",  f"{rec_gap:,.2f}"],
+        ["Phase",             "Recovery" if in_rec else "Post-recovery"],
+    ]
+
+    risk_rows = [
+        ["Daily Risk Used",   f"{risk.get('daily_risk_used', 0.0):.4f}",   "Max 1%"],
+        ["Weekly Risk Used",  f"{risk.get('weekly_risk_used', 0.0):.4f}",  "Max 2%"],
+        ["Current Drawdown",  f"{risk.get('current_drawdown', 0.0):.4f}",  "Safe mode at 5%"],
+        ["Safe Mode",         "YES" if risk.get("in_safe_mode") else "NO", risk.get("safe_mode_reason", "")],
+    ]
+
+    body = f"""
+<h1>IBKR Capital</h1>
+<p class="subtitle">Capital state, bucket breakdown, and risk accumulators. Last updated: {_esc(updated[:19] if updated != "—" else "—")}.</p>
+<p><a href="/ibkr">← Back to IBKR Overview</a></p>
+{stats_html}
+<div class="section-title">Recovery Phase</div>
+{data_table(["Metric", "Value"], recovery_rows, "No capital state available.")}
+<div class="section-title">Post-Recovery Buckets</div>
+{data_table(["Bucket", "Balance", "Purpose"], bucket_rows, "No bucket data available.")}
+<div class="section-title">Risk Accumulators</div>
+{data_table(["Metric", "Value", "Limit"], risk_rows, "No risk data available.")}
+"""
+    return page("IBKR Capital", body, active="/ibkr")
+
+
+# ---------------------------------------------------------------------------
 # 404
 # ---------------------------------------------------------------------------
 

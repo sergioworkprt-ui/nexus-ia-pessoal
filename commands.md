@@ -656,5 +656,171 @@ for entry in ee.history(limit=10):
 
 ---
 
+## IBKR Integration — Integração com Interactive Brokers (Fase 11)
+
+### Modos de operação
+
+| Modo | Comportamento |
+|---|---|
+| `paper` | Simulação — ordens preenchidas instantaneamente sem IO real |
+| `semi` | Ordens ficam pendentes até o utilizador confirmar com `ibkr confirm ORDER_ID` |
+| `auto` | Execução automática imediata dentro de todos os limites de risco |
+
+> **IBKR começa sempre em modo `paper`. Para activar `semi` ou `auto` requer confirmação explícita.**
+
+### Comandos de chat (Command Layer)
+
+| Comando | Descrição | Confirmar? |
+|---|---|---|
+| `ibkr status` | Estado completo: modo, saldo, posições, risk | — |
+| `ibkr positions` | Lista posições abertas com PnL | — |
+| `ibkr balance` | Saldo e breakdown de capital por bucket | — |
+| `ibkr orders` | Ordens abertas e recentes | — |
+| `ibkr mode auto` | Ativa modo automático | ⚠ sim |
+| `ibkr mode semi` | Ativa modo semi (confirmação manual) | ⚠ sim |
+| `ibkr mode paper` | Volta a modo paper (simulação) | ⚠ sim |
+| `ibkr enable auto` | Alias para `ibkr mode auto` | ⚠ sim |
+| `ibkr capital 1000` | Define limite máximo de capital deployável | ⚠ sim |
+| `ibkr set capital 500` | Alias para `ibkr capital X` | ⚠ sim |
+| `ibkr close BTC` | Fecha posição aberta em BTC | ⚠ sim |
+| `ibkr safe mode` | Entra em safe mode — bloqueia todas as novas trades | — |
+| `ibkr resume` | Sai do safe mode e retoma operações | ⚠ sim |
+| `ibkr confirm ORD-001` | Confirma uma ordem pendente (modo semi) | — |
+
+### Variantes em português natural
+
+| Input | Equivalente |
+|---|---|
+| `NEXUS, ativa modo automático.` | `ibkr mode auto` |
+| `NEXUS, ativa modo semi.` | `ibkr mode semi` |
+| `NEXUS, ativa modo paper.` | `ibkr mode paper` |
+| `NEXUS, usa no máximo 800 euros.` | `ibkr capital 800` |
+| `NEXUS, fecha BTC.` | `ibkr close BTC` |
+| `NEXUS, fecha ETH.` | `ibkr close ETH` |
+| `NEXUS, entra em safe mode.` | `ibkr safe mode` |
+| `NEXUS, retoma operações.` | `ibkr resume` |
+| `confirmar ordem ORD-001` | `ibkr confirm ORD-001` |
+
+### Limites de risco (fixos — não modificáveis pelo utilizador)
+
+| Parâmetro | Valor | Descrição |
+|---|---|---|
+| `max_risk_per_trade` | 0.5% | Risco máximo por posição (% do capital) |
+| `max_daily_risk` | 1.0% | Risco acumulado máximo por dia |
+| `max_weekly_risk` | 2.0% | Risco acumulado máximo por semana |
+| `max_drawdown` | 5.0% | Drawdown que activa safe mode automático |
+
+### Gestão de capital — Fase de recuperação
+
+Enquanto `recovered_capital < initial_capital`, todos os lucros vão para recuperação.
+Nenhum reinvestimento ou uso dos fundos é permitido.
+
+Após recuperação, o capital é dividido em 3 buckets:
+
+| Bucket | % | Descrição |
+|---|---|---|
+| `tools_fund` | 30% | Custos operacionais e infraestrutura |
+| `reinvest_fund` | 50% | Reinvestido em novas posições |
+| `standby_fund` | 20% | Congelado — requer `authorise_standby(amount)` explícito |
+
+### Regra do limite de capital (hard cap)
+
+O NEXUS **nunca** pode deployer mais do que `user_capital_limit` sem comando explícito do utilizador.
+Aumentar o limite requer `ibkr capital NOVO_LIMITE`.
+
+### Audit chain
+
+Cada acção IBKR escreve em dois ficheiros com encadeamento SHA-256:
+- `logs/ibkr_orders.jsonl` — log de todas as ordens
+- `logs/audit_chain.jsonl` — audit chain global
+
+Cada entrada tem os campos `hash` (SHA-256) e `prev_hash` (hash da entrada anterior), formando uma cadeia à prova de adulteração.
+
+### Dashboard — Rotas IBKR
+
+| Rota | Descrição |
+|---|---|
+| `http://localhost:7000/ibkr` | Overview: modo, estado, saldo, risco |
+| `http://localhost:7000/ibkr/positions` | Posições abertas com PnL |
+| `http://localhost:7000/ibkr/orders` | Ordens pendentes e histórico recente |
+| `http://localhost:7000/ibkr/capital` | Capital, buckets e accumuladores de risco |
+
+> Todas as rotas são **só de leitura** — lêem de `data/ibkr/` e `logs/ibkr_orders.jsonl`.
+
+### Configuração (`config/live_runtime.json`)
+
+```json
+"ibkr": {
+  "mode": "paper",
+  "enabled": false,
+  "initial_capital": 0.0,
+  "user_capital_limit": 0.0,
+  "recovery_enabled": true,
+  "tools_fund_pct": 0.30,
+  "reinvest_fund_pct": 0.50,
+  "standby_fund_pct": 0.20,
+  "max_risk_per_trade": 0.005,
+  "max_daily_risk": 0.010,
+  "max_weekly_risk": 0.020,
+  "max_drawdown": 0.050,
+  "host": "127.0.0.1",
+  "port": 7497,
+  "client_id": 1
+}
+```
+
+> `port: 7497` = TWS paper trading. Para live TWS usar `port: 7496`.
+
+### Python API
+
+```python
+from nexus_runtime import NexusRuntime
+from nexus_runtime.ibkr_integration import IBKRIntegration
+from nexus_runtime.capital_manager import CapitalManager
+from nexus_runtime.risk_manager import RiskManager
+
+# Construir a partir do runtime
+runtime = NexusRuntime.live()
+ibkr = IBKRIntegration.from_runtime(runtime)
+ibkr.connect()
+
+# Estado
+print(ibkr.status())
+
+# Colocar uma ordem (paper mode)
+result = ibkr.place_order(
+    symbol="BTC",
+    side="buy",
+    size=0.01,
+    price=50000.0,
+    sl=49000.0,
+    tp=52000.0,
+)
+print(result.order_id, result.status)   # e.g. "ORD-001", "simulated"
+
+# Confirmar uma ordem pendente (semi mode)
+result = ibkr.confirm_pending("ORD-001")
+
+# Fechar posição
+close_result = ibkr.close_position("BTC")
+print(close_result.pnl)
+
+# Safe mode
+ibkr.enter_safe_mode("Drawdown atingiu 5%")
+ibkr.exit_safe_mode()
+
+# Capital manager
+cap = ibkr._capital
+cap.setup(initial_capital=1000.0, user_capital_limit=800.0)
+print(cap.status())
+
+# Risk manager
+risk = ibkr._risk
+ok, reason = risk.validate_trade(capital=1000.0, risk_amount=4.0)
+print(ok, reason)
+```
+
+---
+
 *Documentação gerada automaticamente pelo sistema NEXUS.*  
 *Para ajuda detalhada sobre um comando: `nexus help <comando>`*

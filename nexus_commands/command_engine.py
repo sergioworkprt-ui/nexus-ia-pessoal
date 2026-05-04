@@ -274,6 +274,17 @@ class CommandEngine:
             "evolve_apply":          self._h_evolve_apply,
             "evolve_rollback":       self._h_evolve_rollback,
             "evolve_history":        self._h_evolve_history,
+            # IBKR Integration
+            "ibkr_status":           self._h_ibkr_status,
+            "ibkr_positions":        self._h_ibkr_positions,
+            "ibkr_balance":          self._h_ibkr_balance,
+            "ibkr_orders":           self._h_ibkr_orders,
+            "ibkr_enable_mode":      self._h_ibkr_enable_mode,
+            "ibkr_set_capital":      self._h_ibkr_set_capital,
+            "ibkr_close":            self._h_ibkr_close,
+            "ibkr_safe_mode":        self._h_ibkr_safe_mode,
+            "ibkr_resume":           self._h_ibkr_resume,
+            "ibkr_confirm":          self._h_ibkr_confirm,
         }
 
     # ── run ──────────────────────────────────────────────────────────────
@@ -890,6 +901,225 @@ class CommandEngine:
         except Exception as exc:
             return CommandResponse(ok=False, command=str(intent),
                                    message=f"Evolution history failed: {exc}")
+
+    # ------------------------------------------------------------------
+    # IBKR Integration handlers
+    # ------------------------------------------------------------------
+
+    def _get_ibkr(self):
+        """Return the IBKRIntegration from the runtime, or raise."""
+        ibkr = getattr(self._runtime, "ibkr", None)
+        if ibkr is None:
+            raise RuntimeError(
+                "IBKRIntegration not attached to runtime. "
+                "Start the runtime with ibkr enabled or call runtime.setup_ibkr()."
+            )
+        return ibkr
+
+    def _h_ibkr_status(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ibkr   = self._get_ibkr()
+            status = ibkr.status()
+            mode   = status.get("mode", "?")
+            connected = status.get("connected", False)
+            bal    = status.get("balance", 0.0)
+            n_pos  = status.get("positions", 0)
+            n_pend = status.get("pending_orders", 0)
+            safe   = status.get("risk", {}).get("in_safe_mode", False)
+            msg = (
+                f"IBKR {'connected' if connected else 'disconnected'}  "
+                f"mode={mode}  balance={bal:.2f}  "
+                f"positions={n_pos}  pending={n_pend}"
+                + ("  [SAFE MODE]" if safe else "")
+            )
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=status)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR status failed: {exc}")
+
+    def _h_ibkr_positions(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ibkr = self._get_ibkr()
+            positions = ibkr.get_positions()
+            if not positions:
+                return CommandResponse(ok=True, command=str(intent),
+                                       message="No open IBKR positions.", data={"positions": []})
+            lines = []
+            for p in positions:
+                d = p.to_dict() if hasattr(p, "to_dict") else p
+                pnl = d.get("pnl", 0.0)
+                sign = "+" if pnl >= 0 else ""
+                lines.append(
+                    f"  {d['symbol']}  {d['side'].upper()}  size={d['size']}  "
+                    f"entry={d['entry_price']:.4f}  pnl={sign}{pnl:.2f}"
+                )
+            msg = f"{len(positions)} open position(s):\n" + "\n".join(lines)
+            return CommandResponse(
+                ok=True, command=str(intent), message=msg,
+                data={"positions": [p.to_dict() if hasattr(p, "to_dict") else p for p in positions]},
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR positions failed: {exc}")
+
+    def _h_ibkr_balance(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ibkr    = self._get_ibkr()
+            balance = ibkr.get_balance()
+            cap     = ibkr._cm.status() if ibkr._cm else {}
+            risk    = ibkr._rm.status() if ibkr._rm else {}
+            data = {
+                "balance":       balance,
+                "capital":       cap,
+                "risk":          risk,
+            }
+            avail    = cap.get("available_capital", balance)
+            deployed = cap.get("total_deployed", 0.0)
+            msg = (
+                f"Balance={balance:.2f}  available={avail:.2f}  "
+                f"deployed={deployed:.2f}  "
+                f"daily_risk_used={risk.get('daily_risk_used_pct', 0.0):.2%}"
+            )
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=data)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR balance failed: {exc}")
+
+    def _h_ibkr_orders(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ibkr    = self._get_ibkr()
+            orders  = ibkr.get_open_orders()
+            if not orders:
+                return CommandResponse(ok=True, command=str(intent),
+                                       message="No open IBKR orders.", data={"orders": []})
+            lines = []
+            for o in orders:
+                d = o if isinstance(o, dict) else vars(o)
+                lines.append(
+                    f"  {d.get('order_id', '?')}  {d.get('symbol', '?')}  "
+                    f"{d.get('side', '?').upper()}  size={d.get('size', 0)}  "
+                    f"status={d.get('status', '?')}"
+                )
+            msg = f"{len(orders)} order(s):\n" + "\n".join(lines)
+            return CommandResponse(ok=True, command=str(intent), message=msg,
+                                   data={"orders": orders})
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR orders failed: {exc}")
+
+    def _h_ibkr_enable_mode(self, intent: ParsedIntent) -> CommandResponse:
+        mode = intent.params.get("mode", "paper")
+        if mode not in ("paper", "semi", "auto"):
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Invalid mode '{mode}'. Choose: paper | semi | auto")
+        try:
+            ibkr = self._get_ibkr()
+            ibkr.set_mode(mode)
+            warnings = []
+            if mode == "auto":
+                warnings.append("AUTO mode: orders execute immediately within risk limits.")
+            elif mode == "semi":
+                warnings.append("SEMI mode: orders require 'ibkr confirm ORDER_ID' before execution.")
+            return CommandResponse(
+                ok=True, command=str(intent),
+                message=f"IBKR mode set to {mode.upper()}.",
+                data={"mode": mode},
+                warnings=warnings,
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR set mode failed: {exc}")
+
+    def _h_ibkr_set_capital(self, intent: ParsedIntent) -> CommandResponse:
+        limit = intent.params.get("limit") or intent.params.get("value") or intent.params.get("amount")
+        if limit is None:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Capital limit required. Example: ibkr capital 1000")
+        limit = float(limit)
+        if limit <= 0:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Capital limit must be positive.")
+        try:
+            ibkr = self._get_ibkr()
+            old  = ibkr._cm._state.user_capital_limit if ibkr._cm else 0
+            ibkr._cm.increase_limit(limit)
+            return CommandResponse(
+                ok=True, command=str(intent),
+                message=f"IBKR capital limit updated: {old:.2f} → {limit:.2f}",
+                data={"old_limit": old, "new_limit": limit},
+                warnings=[
+                    "This is a hard cap. NEXUS will never deploy more than this amount.",
+                    "Use 'ibkr balance' to verify the new deployment limit.",
+                ],
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR set capital failed: {exc}")
+
+    def _h_ibkr_close(self, intent: ParsedIntent) -> CommandResponse:
+        symbol = (intent.params.get("symbol") or "").upper()
+        if not symbol:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Symbol required. Example: ibkr close BTC")
+        try:
+            ibkr   = self._get_ibkr()
+            result = ibkr.close_position(symbol)
+            d      = result.to_dict() if hasattr(result, "to_dict") else result
+            pnl    = d.get("pnl", 0.0) if isinstance(d, dict) else 0.0
+            status = d.get("status", "?") if isinstance(d, dict) else "?"
+            sign   = "+" if pnl >= 0 else ""
+            msg    = f"Position {symbol} closed. status={status}  pnl={sign}{pnl:.2f}"
+            return CommandResponse(ok=True, command=str(intent), message=msg,
+                                   data=d if isinstance(d, dict) else {"result": str(d)})
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR close {symbol} failed: {exc}")
+
+    def _h_ibkr_safe_mode(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ibkr = self._get_ibkr()
+            ibkr.enter_safe_mode("Manual safe mode activated via command.")
+            return CommandResponse(
+                ok=True, command=str(intent),
+                message="IBKR safe mode ACTIVATED — all new trades blocked.",
+                warnings=[
+                    "No new positions will be opened until safe mode is lifted.",
+                    "Use 'ibkr resume' to exit safe mode.",
+                ],
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR safe mode failed: {exc}")
+
+    def _h_ibkr_resume(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            ibkr = self._get_ibkr()
+            ibkr.exit_safe_mode()
+            return CommandResponse(
+                ok=True, command=str(intent),
+                message="IBKR safe mode DEACTIVATED — trading operations resumed.",
+                data={"mode": ibkr.mode()},
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR resume failed: {exc}")
+
+    def _h_ibkr_confirm(self, intent: ParsedIntent) -> CommandResponse:
+        order_id = intent.params.get("order_id", "").upper()
+        if not order_id:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="Order ID required. Example: ibkr confirm ORD-001")
+        try:
+            ibkr   = self._get_ibkr()
+            result = ibkr.confirm_pending(order_id)
+            d      = result.to_dict() if hasattr(result, "to_dict") else {}
+            status = d.get("status", "?")
+            symbol = d.get("symbol", "?")
+            msg    = f"Order {order_id} ({symbol}) confirmed: status={status}"
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=d)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"IBKR confirm failed: {exc}")
 
     # ------------------------------------------------------------------
     # History

@@ -108,6 +108,34 @@ class StateConfig:
 
 
 # ---------------------------------------------------------------------------
+# IBKR integration config
+# ---------------------------------------------------------------------------
+
+@dataclass
+class IBKRConfig:
+    """Configuration for the IBKR trading integration."""
+    mode:               str   = "paper"      # paper | semi | auto
+    enabled:            bool  = False
+    initial_capital:    float = 0.0          # user-provided capital
+    user_capital_limit: float = 0.0          # hard cap NEXUS may deploy
+    # Recovery phase
+    recovery_enabled:   bool  = True
+    # Post-recovery bucket splits
+    tools_fund_pct:     float = 0.30
+    reinvest_fund_pct:  float = 0.50
+    standby_fund_pct:   float = 0.20
+    # Risk limits (overrides RiskManager defaults when set)
+    max_risk_per_trade: float = 0.005        # 0.5%
+    max_daily_risk:     float = 0.010        # 1.0%
+    max_weekly_risk:    float = 0.020        # 2.0%
+    max_drawdown:       float = 0.050        # 5.0% → safe mode
+    # Connection (TWS)
+    host:               str   = "127.0.0.1"
+    port:               int   = 7497         # 7497=paper TWS, 7496=live
+    client_id:          int   = 1
+
+
+# ---------------------------------------------------------------------------
 # Top-level runtime config
 # ---------------------------------------------------------------------------
 
@@ -125,6 +153,7 @@ class RuntimeConfig:
     reporting:    ReportingConfig    = field(default_factory=ReportingConfig)
     scheduler:    SchedulerConfig    = field(default_factory=SchedulerConfig)
     state:        StateConfig        = field(default_factory=StateConfig)
+    ibkr:         IBKRConfig         = field(default_factory=IBKRConfig)
 
     @property
     def is_live(self) -> bool:
@@ -185,6 +214,7 @@ class RuntimeConfig:
             ("reporting",    cfg.reporting),
             ("scheduler",    cfg.scheduler),
             ("state",        cfg.state),
+            ("ibkr",         cfg.ibkr),
         ]:
             if sub in data and isinstance(data[sub], dict):
                 _apply(klass, data[sub])

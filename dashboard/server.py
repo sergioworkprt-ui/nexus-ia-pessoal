@@ -56,6 +56,14 @@ class _Handler(BaseHTTPRequestHandler):
             html = pages.render_evolution()
         elif path == "/limits":
             html = pages.render_limits()
+        elif path == "/ibkr":
+            html = pages.render_ibkr()
+        elif path == "/ibkr/positions":
+            html = pages.render_ibkr_positions()
+        elif path == "/ibkr/orders":
+            html = pages.render_ibkr_orders()
+        elif path == "/ibkr/capital":
+            html = pages.render_ibkr_capital()
         else:
             self._send(404, pages.render_404(path))
             return

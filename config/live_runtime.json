@@ -67,5 +67,22 @@
     "checkpoint_path": "data/runtime/live_checkpoint.json",
     "checkpoint_interval_s": 300,
     "max_checkpoints": 5
+  },
+  "ibkr": {
+    "mode": "paper",
+    "enabled": false,
+    "initial_capital": 0.0,
+    "user_capital_limit": 0.0,
+    "recovery_enabled": true,
+    "tools_fund_pct": 0.30,
+    "reinvest_fund_pct": 0.50,
+    "standby_fund_pct": 0.20,
+    "max_risk_per_trade": 0.005,
+    "max_daily_risk": 0.010,
+    "max_weekly_risk": 0.020,
+    "max_drawdown": 0.050,
+    "host": "127.0.0.1",
+    "port": 7497,
+    "client_id": 1
   }
 }

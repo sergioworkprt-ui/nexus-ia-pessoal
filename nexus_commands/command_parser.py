@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .command_registry import (
     CommandRegistry, CommandDef,
-    VERBS, TARGETS, PIPELINE_NAMES, MODULE_NAMES,
+    VERBS, TARGETS, PIPELINE_NAMES, MODULE_NAMES, IBKR_MODES,
 )
 
 
@@ -119,6 +119,20 @@ _VERB_SYNONYMS: Dict[str, str] = {
     "undo": "rollback", "desfaz": "rollback",
     # propose
     "mostra propostas": "propose", "propor": "propose",
+    # ibkr
+    "ibkr": "ibkr",
+    # close (IBKR position close)
+    "fecha": "ibkr", "fechar": "ibkr", "fechas": "ibkr",
+    # confirm (IBKR semi order)
+    "confirma": "confirm", "confirmar": "confirm", "confirmo": "confirm",
+    # Portuguese IBKR verb synonyms
+    "ativa": "ibkr",       # "ativa modo automático" → ibkr mode auto
+    "ativar": "ibkr",
+    "entra": "ibkr",       # "entra em safe mode" → ibkr safe
+    "entrar": "ibkr",
+    "usa": "ibkr",         # "usa no máximo 800 euros" → ibkr capital 800
+    "retoma": "resume",    # "retoma operações" → ibkr resume
+    "retomar": "resume",
 }
 
 # Target synonyms → canonical target
@@ -188,6 +202,27 @@ _TARGET_SYNONYMS: Dict[str, str] = {
     "evolution proposals": "evolution",
     "evolução": "evolution",
     "evoluição": "evolution",
+    # IBKR targets
+    "positions": "positions",
+    "posições": "positions",
+    "posicoes": "positions",
+    "balance": "balance",
+    "saldo": "balance",
+    "capital": "capital",
+    "orders": "orders",
+    "ordens": "orders",
+    "safe mode": "safe",
+    "safe": "safe",
+    "modo seguro": "safe",
+    "modo automático": "mode",
+    "modo automatico": "mode",
+    "modo semi": "mode",
+    "modo paper": "mode",
+    "modo": "mode",
+    # "no máximo X euros" → capital
+    "máximo": "capital",
+    "maximo": "capital",
+    "limite": "capital",
 }
 
 # Known limit aliases → canonical config attribute names
@@ -287,6 +322,20 @@ class CommandParser:
                 # Evolution commands default target
                 target = "evolution"
                 target_idx = len(tokens)
+            elif verb == "ibkr":
+                # Bare "ibkr" with no recognised target → status
+                target = "status"
+                target_idx = len(tokens)
+            elif verb in ("confirm",):
+                target = "confirm"
+                target_idx = len(tokens)
+            elif verb == "close":
+                target = "ibkr"
+                target_idx = len(tokens)
+            elif verb == "resume":
+                # Bare "resume" → ibkr resume (if ibkr context; else pipeline resume)
+                target = "pipeline"
+                target_idx = len(tokens)
             else:
                 suggestions = [f"{verb} {t}" for t in sorted(TARGETS)[:6]]
                 return None, ParseError(
@@ -384,6 +433,40 @@ class CommandParser:
             if verb in ("signal", "analyze", "entry", "exit") and re.match(r'^[a-z]{1,6}$', tok):
                 return verb, verb_idx + 1 + i   # target = verb itself; symbol stays in remaining
 
+            # IBKR: ibkr close BTC / ibkr confirm ORD-xxx
+            if verb == "ibkr" and tok in ("close", "fecha", "fechar"):
+                return "close", verb_idx + 1 + i + 1
+            if verb == "ibkr" and tok in ("confirm", "confirma", "confirmar"):
+                return "confirm", verb_idx + 1 + i + 1
+
+            # "enable auto/semi/paper" without explicit "ibkr" target
+            if verb == "enable" and tok in IBKR_MODES:
+                return "ibkr", verb_idx + 1 + i   # mode token stays in remaining
+
+            # IBKR sub-verb aliases when following "ibkr": "ibkr enable auto" → ibkr:mode
+            if verb == "ibkr" and tok == "enable":
+                return "mode", verb_idx + 1 + i + 1
+            # "ibkr resume" → ibkr:resume (don't treat as symbol)
+            if verb == "ibkr" and tok == "resume":
+                return "resume", verb_idx + 1 + i + 1
+
+            # IBKR Portuguese target hints
+            if verb == "ibkr":
+                # "modo automático/semi/paper" → target=mode
+                if tok == "modo":
+                    return "mode", verb_idx + 1 + i + 1
+                # "safe" or "em" (as in "entra em safe mode")
+                if tok in ("safe", "em"):
+                    return "safe", verb_idx + 1 + i + 1
+                # "no" or "máximo"/"maximo" (as in "usa no máximo X euros") → capital
+                if tok in ("no", "máximo", "maximo"):
+                    return "capital", verb_idx + 1 + i + 1
+
+            # IBKR close: "fecha BTC" → verb=ibkr, target=close (only bare trading symbols)
+            if verb == "ibkr" and re.match(r'^[a-z0-9]{1,10}$', tok) and tok not in TARGETS and tok not in VERBS:
+                # Bare symbol after ibkr without known target → treat as close
+                return "close", verb_idx + 1 + i   # symbol stays in remaining
+
             # Module name used as target shorthand
             if tok in MODULE_NAMES and verb in ("enable", "disable", "show", "start", "stop"):
                 return "module", verb_idx + 1 + i + 1
@@ -426,6 +509,47 @@ class CommandParser:
     ) -> Dict[str, Any]:
         params: Dict[str, Any] = {}
         remaining = tokens[after_idx:]
+
+        # ── IBKR-specific params ────────────────────────────────────────
+        if verb == "ibkr" or target in ("ibkr", "close", "capital", "mode", "confirm", "positions", "balance", "orders", "safe"):
+            # Mode extraction: auto / semi / paper (including Portuguese variants)
+            _PT_MODES = {
+                "automático": "auto", "automatico": "auto",
+                "semiautomático": "semi", "semiautomatico": "semi",
+            }
+            for tok in remaining:
+                if tok in IBKR_MODES:
+                    params["mode"] = tok
+                    break
+                if tok in _PT_MODES:
+                    params["mode"] = _PT_MODES[tok]
+                    break
+            # Symbol for close
+            if target == "close":
+                for tok in remaining:
+                    if re.match(r'^[a-z0-9]{1,10}$', tok) and tok not in IBKR_MODES and tok not in _NOISE:
+                        params["symbol"] = tok.upper()
+                        break
+            # Order ID for confirm: alphanumeric tokens that look like order IDs
+            if target == "confirm":
+                for tok in remaining:
+                    if tok not in _NOISE and tok not in TARGETS:
+                        params["order_id"] = tok.upper()
+                        break
+            # Capital limit: numeric value
+            if target == "capital":
+                for tok in remaining:
+                    if re.match(r'^\d+(?:\.\d+)?$', tok):
+                        params["limit"] = float(tok)
+                        break
+            # "enable ibkr" with mode token in remaining
+            if verb == "enable" and target == "ibkr" and "mode" not in params:
+                for tok in remaining:
+                    if tok in IBKR_MODES:
+                        params["mode"] = tok
+                        break
+                if "mode" not in params:
+                    params["mode"] = "paper"  # default to paper if unspecified
 
         # ── symbol (signal engine commands) ─────────────────────────────
         if verb in ("signal", "analyze", "entry", "exit") or target in ("signal", "entry", "exit"):
@@ -544,6 +668,36 @@ class CommandParser:
         # apply / rollback / propose with no or wrong target → evolution
         if verb in ("apply", "rollback", "propose") and target not in ("evolution",):
             defn = self._registry.get(verb, "evolution")
+            if defn:
+                return defn
+
+        # IBKR: verb=ibkr with any target → look up ibkr:<target>
+        if verb == "ibkr":
+            defn = self._registry.get("ibkr", target)
+            if defn:
+                return defn
+
+        # "enable auto/semi/paper" without explicit ibkr target
+        if verb == "enable" and target == "ibkr":
+            defn = self._registry.get("enable", "ibkr")
+            if defn:
+                return defn
+
+        # "close BTC" / "fecha BTC" → ibkr close
+        if verb in ("ibkr", "close") and target in ("close", "ibkr"):
+            defn = self._registry.get("ibkr", "close") or self._registry.get("close", "ibkr")
+            if defn:
+                return defn
+
+        # "set capital X" → ibkr capital
+        if verb in ("set", "ibkr") and target == "capital":
+            defn = self._registry.get("ibkr", "capital") or self._registry.get("set", "capital")
+            if defn:
+                return defn
+
+        # "ibkr resume" fallback
+        if verb == "ibkr" and target == "resume":
+            defn = self._registry.get("ibkr", "resume")
             if defn:
                 return defn
 

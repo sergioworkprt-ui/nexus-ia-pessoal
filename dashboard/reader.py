@@ -235,6 +235,95 @@ def read_evolution_data() -> Dict[str, Any]:
     }
 
 
+def read_ibkr_status() -> Dict[str, Any]:
+    """Read IBKR integration status from persisted state files."""
+    capital = _load_json("data/ibkr/capital_state.json") or {}
+    risk    = _load_json("data/ibkr/risk_state.json") or {}
+    positions = _load_json("data/ibkr/positions.json") or {}
+    pending   = _load_json("data/ibkr/pending_orders.json") or {}
+    cfg       = (_load_json("config/live_runtime.json") or {}).get("ibkr", {})
+
+    n_positions = len(positions)
+    n_pending   = len(pending)
+
+    return {
+        "enabled":      cfg.get("enabled", False),
+        "mode":         cfg.get("mode", "paper"),
+        "connected":    False,   # file-only read; live connection not available here
+        "balance":      capital.get("initial_capital", 0.0),
+        "n_positions":  n_positions,
+        "n_pending":    n_pending,
+        "capital":      capital,
+        "risk":         risk,
+        "cfg":          cfg,
+        "updated":      capital.get("last_updated", "—"),
+    }
+
+
+def read_ibkr_positions() -> List[Dict[str, Any]]:
+    """Read open IBKR positions from persisted JSON."""
+    positions = _load_json("data/ibkr/positions.json") or {}
+    if isinstance(positions, dict):
+        return list(positions.values())
+    if isinstance(positions, list):
+        return positions
+    return []
+
+
+def read_ibkr_orders() -> Dict[str, Any]:
+    """Read IBKR order logs (recent fills + pending)."""
+    pending  = _load_json("data/ibkr/pending_orders.json") or {}
+    log      = _load_jsonl("logs/ibkr_orders.jsonl", limit=50)
+    fills    = [e for e in log if e.get("status") in ("simulated", "filled", "closed")]
+    return {
+        "pending": list(pending.values()) if isinstance(pending, dict) else pending,
+        "recent":  list(reversed(fills[-20:])),
+        "total_logged": len(log),
+    }
+
+
+def read_ibkr_capital() -> Dict[str, Any]:
+    """Read IBKR capital state including bucket breakdown."""
+    state = _load_json("data/ibkr/capital_state.json") or {}
+    risk  = _load_json("data/ibkr/risk_state.json") or {}
+
+    initial    = state.get("initial_capital", 0.0)
+    recovered  = state.get("recovered_capital", 0.0)
+    limit      = state.get("user_capital_limit", 0.0)
+    deployed   = state.get("total_deployed", 0.0)
+    tools      = state.get("tools_fund", 0.0)
+    reinvest   = state.get("reinvest_fund", 0.0)
+    standby    = state.get("standby_fund", 0.0)
+    profit     = state.get("nexus_profit", 0.0)
+    in_recovery = state.get("in_recovery_phase", True)
+
+    available  = max(0.0, min(limit, tools + reinvest) - deployed) if limit else 0.0
+
+    return {
+        "initial_capital":   initial,
+        "recovered_capital": recovered,
+        "recovery_gap":      max(0.0, initial - recovered),
+        "in_recovery_phase": in_recovery,
+        "user_capital_limit": limit,
+        "total_deployed":    deployed,
+        "available_capital": available,
+        "nexus_profit":      profit,
+        "buckets": {
+            "tools_fund":    tools,
+            "reinvest_fund": reinvest,
+            "standby_fund":  standby,
+        },
+        "risk": {
+            "daily_risk_used":   risk.get("daily_risk_used", 0.0),
+            "weekly_risk_used":  risk.get("weekly_risk_used", 0.0),
+            "current_drawdown":  risk.get("current_drawdown", 0.0),
+            "in_safe_mode":      risk.get("in_safe_mode", False),
+            "safe_mode_reason":  risk.get("safe_mode_reason", ""),
+        },
+        "updated": state.get("last_updated", "—"),
+    }
+
+
 def read_overview() -> Dict[str, Any]:
     startup = read_startup_status()
     checkpoint = read_checkpoint()
