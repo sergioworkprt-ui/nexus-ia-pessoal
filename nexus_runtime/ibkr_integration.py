@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .capital_manager import CapitalManager
 from .risk_manager import RiskManager
+from .ibkr_client_portal import IBKRClientPortal, CPGAuthError, CPGRequestError, _sec_type_for
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +135,7 @@ class IBKRIntegration:
         mode:            str              = "paper",
         capital_manager: Optional[CapitalManager] = None,
         risk_manager:    Optional[RiskManager]    = None,
+        cpg:             Optional[IBKRClientPortal] = None,
         config:          Optional[Any]    = None,
         bus:             Optional[Any]    = None,
         reports:         Optional[Any]   = None,
@@ -148,8 +150,9 @@ class IBKRIntegration:
         self._lock   = threading.RLock()
         self._root   = Path(__file__).parent.parent
 
-        self._cm = capital_manager or CapitalManager()
-        self._rm = risk_manager    or RiskManager()
+        self._cm  = capital_manager or CapitalManager()
+        self._rm  = risk_manager    or RiskManager()
+        self._cpg = cpg             # IBKRClientPortal — None = pure simulation
 
         self._connected  = False
         self._positions: Dict[str, Position] = {}   # symbol → Position
@@ -162,15 +165,29 @@ class IBKRIntegration:
 
     @classmethod
     def from_runtime(cls, runtime: Any) -> "IBKRIntegration":
-        cfg  = runtime._config
+        cfg      = runtime._config
         ibkr_cfg = getattr(cfg, "ibkr", None)
-        mode = getattr(ibkr_cfg, "mode", "paper") if ibkr_cfg else "paper"
-        cm   = CapitalManager.from_runtime(runtime)
-        rm   = RiskManager.from_runtime(runtime)
+        mode     = getattr(ibkr_cfg, "mode", "paper") if ibkr_cfg else "paper"
+        cm       = CapitalManager.from_runtime(runtime)
+        rm       = RiskManager.from_runtime(runtime)
+
+        # Build CPG client when enabled and not in pure paper simulation
+        cpg: Optional[IBKRClientPortal] = None
+        if ibkr_cfg and getattr(ibkr_cfg, "enabled", False):
+            cpg = IBKRClientPortal(
+                base_url       = getattr(ibkr_cfg, "cpg_base_url",    "https://localhost:5000"),
+                account_id     = getattr(ibkr_cfg, "cpg_account_id",  ""),
+                verify_ssl     = getattr(ibkr_cfg, "cpg_verify_ssl",  False),
+                timeout_s      = getattr(ibkr_cfg, "cpg_timeout_s",   10),
+                paper          = (mode == "paper"),
+                log_path       = "logs/ibkr_cpg.jsonl",
+            )
+
         return cls(
             mode=mode,
             capital_manager=cm,
             risk_manager=rm,
+            cpg=cpg,
             config=cfg,
             bus=getattr(runtime, "bus", None),
             reports=getattr(runtime.integration.modules, "reports", None),
@@ -182,32 +199,62 @@ class IBKRIntegration:
 
     def connect(self) -> bool:
         """
-        Establish connection to IBKR (paper: always succeeds).
-        In live mode: would call ib.connect(host, port, clientId).
+        Establish connection to IBKR.
+
+        Paper mode without CPG: always succeeds (simulation).
+        With CPG configured: validates session + starts keepalive.
+          The user must have authenticated via the CPG browser interface first.
+          connect() does NOT block on browser auth — it logs a warning and continues.
         """
         with self._lock:
             if self._connected:
                 return True
             try:
-                if self._mode == "paper":
-                    self._connected = True
-                    # Initialise paper balance from capital manager
-                    capital = self._cm._state.user_capital_limit or self._cm._state.initial_capital
-                    self._balance = capital
-                else:
-                    # Real IBKR connection point — inject ib_insync here
-                    # ib.connect(host, port, clientId)
-                    self._connected = True  # paper fallback for now
-                    self._balance = self._cm._state.user_capital_limit
+                fallback_balance = (
+                    self._cm._state.user_capital_limit
+                    or self._cm._state.initial_capital
+                )
 
+                if self._cpg is not None:
+                    # ── CPG path ──────────────────────────────────────────
+                    auth = self._cpg.auth_status()
+                    authenticated = auth.get("authenticated", False)
+                    if not authenticated:
+                        self._append_log({
+                            "action": "cpg_not_authenticated",
+                            "auth":   auth,
+                            "note":   "Session not yet authenticated. "
+                                      "Log in at the CPG browser interface. "
+                                      "Continuing in degraded mode.",
+                            "ts": _now(),
+                        })
+                    else:
+                        self._cpg.start_keepalive()
+                        # Pull real equity from CPG
+                        try:
+                            self._balance = self._cpg.get_equity() or fallback_balance
+                        except Exception as exc_bal:
+                            self._append_log({"action": "cpg_balance_failed",
+                                              "error": str(exc_bal), "ts": _now()})
+                            self._balance = fallback_balance
+
+                else:
+                    # ── Pure simulation / paper mode ──────────────────────
+                    self._balance = fallback_balance
+
+                self._connected = True
                 self._append_log({
-                    "action":   "connect",
-                    "mode":     self._mode,
-                    "balance":  self._balance,
-                    "ts":       _now(),
+                    "action":  "connect",
+                    "mode":    self._mode,
+                    "cpg":     self._cpg is not None,
+                    "balance": self._balance,
+                    "ts":      _now(),
                 })
-                self._audit("ibkr_connect", f"mode={self._mode}  balance={self._balance:.2f}")
+                self._audit("ibkr_connect",
+                            f"mode={self._mode}  cpg={self._cpg is not None}  "
+                            f"balance={self._balance:.2f}")
                 return True
+
             except Exception as exc:
                 self._append_log({"action": "connect_failed", "error": str(exc), "ts": _now()})
                 return False
@@ -217,6 +264,11 @@ class IBKRIntegration:
             if self._connected:
                 self._save_positions()
                 self._save_pending()
+                if self._cpg is not None:
+                    try:
+                        self._cpg.stop_keepalive()
+                    except Exception:
+                        pass
                 self._connected = False
                 self._audit("ibkr_disconnect", f"mode={self._mode}")
 
@@ -229,26 +281,68 @@ class IBKRIntegration:
     # ------------------------------------------------------------------
 
     def get_balance(self) -> float:
+        """Return current balance. Uses CPG live equity when connected and authenticated."""
+        if self._cpg is not None and self._connected:
+            try:
+                equity = self._cpg.get_equity()
+                if equity and equity > 0:
+                    with self._lock:
+                        self._balance = equity
+            except Exception:
+                pass
         with self._lock:
             return self._balance
 
     def get_positions(self) -> List[Dict[str, Any]]:
+        """Return open positions. Merges CPG live positions with local state in non-paper modes."""
+        if self._cpg is not None and self._connected and self._mode != "paper":
+            try:
+                cpg_positions = self._cpg.get_positions()
+                if cpg_positions:
+                    return cpg_positions
+            except Exception:
+                pass
         with self._lock:
             return [p.to_dict() for p in self._positions.values()]
 
     def get_open_orders(self) -> List[Dict[str, Any]]:
+        """Return open orders. Uses CPG live orders when connected in non-paper modes."""
+        if self._cpg is not None and self._connected and self._mode != "paper":
+            try:
+                cpg_orders = self._cpg.get_open_orders()
+                if cpg_orders:
+                    return cpg_orders
+            except Exception:
+                pass
         with self._lock:
             return list(self._pending.values())
 
     def get_market_price(self, symbol: str) -> float:
-        """Returns last known price (paper: synthetic; real: TWS ticker)."""
+        """
+        Returns the last known price for a symbol.
+        CPG path: calls /iserver/marketdata/snapshot (real-time).
+        Paper path: uses set_paper_price() cache, or a synthetic hash-based value.
+        """
         with self._lock:
             if symbol in self._market_prices:
                 return self._market_prices[symbol]
-            # Paper: return a synthetic price based on symbol hash for stability
-            price = 100.0 + (hash(symbol) % 900)
+
+        # Try CPG real-time price first
+        if self._cpg is not None:
+            try:
+                price = self._cpg.get_market_price(symbol)
+                if price and price > 0:
+                    with self._lock:
+                        self._market_prices[symbol] = price
+                    return price
+            except Exception:
+                pass
+
+        # Fallback: synthetic price (paper / offline)
+        price = 100.0 + (hash(symbol) % 900)
+        with self._lock:
             self._market_prices[symbol] = float(price)
-            return float(price)
+        return float(price)
 
     def set_paper_price(self, symbol: str, price: float) -> None:
         """Override paper price for testing / signal-driven updates."""
@@ -563,9 +657,34 @@ class IBKRIntegration:
     ) -> OrderResult:
         """
         Auto execution: place order immediately within limits.
-        In simulation context: same as paper but with status="filled".
-        In production: would call _place_real_order().
+        Routes through CPG REST API when available; falls back to simulated fill.
         """
+        if self._cpg is not None:
+            try:
+                cpg_resp = self._place_real_order(symbol, side, size, sl, tp, "MKT")
+                fill_price = float(cpg_resp.get("avg_price") or cpg_resp.get("price") or price)
+                return OrderResult(
+                    order_id=order_id, symbol=symbol, side=side,
+                    size=size, price=fill_price, sl=sl, tp=tp,
+                    status="filled", mode="auto", reason=None,
+                    risk_amount=risk_amount, capital_state=self._cm.status(),
+                )
+            except (CPGAuthError, CPGRequestError, ValueError) as exc:
+                self._append_log({
+                    "action": "cpg_order_failed", "order_id": order_id,
+                    "symbol": symbol, "error": str(exc), "ts": _now(),
+                })
+                return self._reject(order_id, symbol, side, size, sl, tp,
+                                    f"cpg_error: {exc}")
+            except Exception as exc:
+                self._append_log({
+                    "action": "cpg_order_unexpected_error", "order_id": order_id,
+                    "symbol": symbol, "error": str(exc), "ts": _now(),
+                })
+                return self._reject(order_id, symbol, side, size, sl, tp,
+                                    f"cpg_unexpected: {exc}")
+
+        # Simulation: immediate fill at market price
         return OrderResult(
             order_id=order_id, symbol=symbol, side=side,
             size=size, price=price, sl=sl, tp=tp,
@@ -573,9 +692,52 @@ class IBKRIntegration:
             risk_amount=risk_amount, capital_state=self._cm.status(),
         )
 
-    def _place_real_order(self, symbol, side, size, sl, tp, order_type) -> Dict[str, Any]:
-        """Hook for real ib_insync execution. Override to connect real API."""
-        raise NotImplementedError("Real IBKR connection not configured.")
+    def _place_real_order(
+        self,
+        symbol:     str,
+        side:       str,       # "buy" | "sell"
+        size:       float,
+        sl:         Optional[float],
+        tp:         Optional[float],
+        order_type: str = "MKT",
+    ) -> Dict[str, Any]:
+        """
+        Submit a real order via the IBKR Client Portal Gateway REST API.
+
+        SL and TP are recorded in the audit log as metadata only — bracket
+        orders are not yet supported by the CPG REST path. Attach manual
+        stop-limit orders via the dashboard or NEXUS command layer after fill.
+
+        Raises:
+            CPGAuthError    — session unauthenticated; user must re-login.
+            CPGRequestError — HTTP/connection error from the CPG.
+            ValueError      — conid cannot be resolved for symbol.
+        """
+        if self._cpg is None:
+            raise RuntimeError("_place_real_order() called without a CPG client.")
+
+        sec_type = _sec_type_for(symbol)
+
+        self._append_log({
+            "action":     "place_real_order",
+            "symbol":     symbol,
+            "side":       side,
+            "size":       size,
+            "order_type": order_type,
+            "sec_type":   sec_type,
+            "sl":         sl,
+            "tp":         tp,
+            "note":       "SL/TP logged only — bracket orders not yet wired to CPG",
+            "ts":         _now(),
+        })
+
+        return self._cpg.place_order(
+            symbol     = symbol,
+            side       = side.upper(),
+            quantity   = size,
+            order_type = order_type.upper(),
+            sec_type   = sec_type,
+        )
 
     # ------------------------------------------------------------------
     # Internal — helpers

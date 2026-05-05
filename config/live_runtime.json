@@ -81,6 +81,10 @@
     "max_daily_risk": 0.010,
     "max_weekly_risk": 0.020,
     "max_drawdown": 0.050,
+    "cpg_base_url": "https://localhost:5000",
+    "cpg_verify_ssl": false,
+    "cpg_timeout_s": 10,
+    "cpg_account_id": "",
     "host": "127.0.0.1",
     "port": 7497,
     "client_id": 1

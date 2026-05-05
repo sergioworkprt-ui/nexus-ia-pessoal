@@ -100,6 +100,7 @@ from .evolution_engine import (
 from .ibkr_integration import IBKRIntegration, OrderResult, Position
 from .capital_manager import CapitalManager, CapitalState
 from .risk_manager import RiskManager, RiskState
+from .ibkr_client_portal import IBKRClientPortal, CPGAuthError, CPGRequestError
 
 # Runtime
 from .runtime import NexusRuntime
@@ -132,6 +133,7 @@ __all__ = [
     "IBKRIntegration", "OrderResult", "Position",
     "CapitalManager", "CapitalState",
     "RiskManager", "RiskState",
+    "IBKRClientPortal", "CPGAuthError", "CPGRequestError",
     # Runtime
     "NexusRuntime",
 ]

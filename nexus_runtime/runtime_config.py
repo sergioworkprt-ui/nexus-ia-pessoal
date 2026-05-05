@@ -129,7 +129,12 @@ class IBKRConfig:
     max_daily_risk:     float = 0.010        # 1.0%
     max_weekly_risk:    float = 0.020        # 2.0%
     max_drawdown:       float = 0.050        # 5.0% → safe mode
-    # Connection (TWS)
+    # Client Portal Gateway (primary real-order path)
+    cpg_base_url:       str   = "https://localhost:5000"   # swap for Render URL
+    cpg_verify_ssl:     bool  = False        # False = accept self-signed cert
+    cpg_timeout_s:      int   = 10
+    cpg_account_id:     str   = ""           # auto-detected if empty
+    # Legacy TWS connection fields (reserved)
     host:               str   = "127.0.0.1"
     port:               int   = 7497         # 7497=paper TWS, 7496=live
     client_id:          int   = 1
