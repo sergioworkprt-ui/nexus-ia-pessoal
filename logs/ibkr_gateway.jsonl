@@ -1,0 +1,17 @@
+{"ts": "2026-05-06T16:07:30.639839+00:00", "action": "init", "base_url": "https://ibkr-gateway-04-08.onrender.com", "paper": true, "verify_ssl": true}
+{"ts": "2026-05-06T16:07:30.640657+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T16:07:30.917686+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016)", "attempt": 0}
+{"ts": "2026-05-06T16:07:31.918099+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T16:07:31.948492+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016)", "attempt": 1}
+{"ts": "2026-05-06T16:07:33.948877+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T16:07:33.983106+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016)", "attempt": 2}
+{"ts": "2026-05-06T16:07:33.983227+00:00", "action": "auth_status_error", "error": "Connection error on GET /iserver/auth/status: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016). Is the CPG running at https://ibkr-gateway-04-08.onrender.com?"}
+{"ts": "2026-05-06T16:07:44.439729+00:00", "action": "init", "base_url": "https://ibkr-gateway-04-08.onrender.com", "paper": true, "verify_ssl": true}
+{"ts": "2026-05-06T16:07:55.954478+00:00", "action": "init", "base_url": "https://ibkr-gateway-04-08.onrender.com", "paper": true, "verify_ssl": true}
+{"ts": "2026-05-06T16:07:55.954743+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T16:07:56.180958+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016)", "attempt": 0}
+{"ts": "2026-05-06T16:07:57.181402+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T16:07:57.197925+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016)", "attempt": 1}
+{"ts": "2026-05-06T16:07:59.198349+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T16:07:59.231419+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016)", "attempt": 2}
+{"ts": "2026-05-06T16:07:59.231533+00:00", "action": "auth_status_error", "error": "Connection error on GET /iserver/auth/status: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016). Is the CPG running at https://ibkr-gateway-04-08.onrender.com?"}
