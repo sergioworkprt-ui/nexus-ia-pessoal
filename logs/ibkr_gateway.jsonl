@@ -15,3 +15,15 @@
 {"ts": "2026-05-06T16:07:59.198349+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
 {"ts": "2026-05-06T16:07:59.231419+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016)", "attempt": 2}
 {"ts": "2026-05-06T16:07:59.231533+00:00", "action": "auth_status_error", "error": "Connection error on GET /iserver/auth/status: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1016). Is the CPG running at https://ibkr-gateway-04-08.onrender.com?"}
+{"ts": "2026-05-06T17:40:19.415496+00:00", "action": "init", "base_url": "https://localhost:5000", "paper": true, "verify_ssl": false}
+{"ts": "2026-05-06T17:40:19.416195+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:40:19.419517+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[Errno 111] Connection refused", "attempt": 0}
+{"ts": "2026-05-06T17:40:20.419846+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:40:20.420500+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[Errno 111] Connection refused", "attempt": 1}
+{"ts": "2026-05-06T17:40:22.420810+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:40:22.421559+00:00", "action": "url_error", "path": "/iserver/auth/status", "error": "[Errno 111] Connection refused", "attempt": 2}
+{"ts": "2026-05-06T17:40:22.421651+00:00", "action": "auth_status_error", "error": "Connection error on GET /iserver/auth/status: [Errno 111] Connection refused. Is the CPG running at https://localhost:5000?"}
+{"ts": "2026-05-06T17:40:50.507191+00:00", "action": "init", "base_url": "https://ibkr-gateway-04-08.onrender.com", "paper": true, "verify_ssl": false}
+{"ts": "2026-05-06T17:40:50.507534+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:40:50.725741+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:40:50.725933+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
