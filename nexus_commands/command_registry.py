@@ -21,6 +21,7 @@ VERBS: Set[str] = {
     "signal", "analyze", "entry", "exit",
     "evolve", "apply", "rollback", "propose",
     "ibkr", "close", "confirm",
+    "gateway",
 }
 
 TARGETS: Set[str] = {
@@ -32,6 +33,8 @@ TARGETS: Set[str] = {
     # IBKR targets
     "positions", "balance", "capital", "orders",
     "safe", "mode", "ibkr", "confirm", "close",
+    # Gateway targets
+    "gateway", "accounts", "pnl", "snapshot", "contract", "login",
 }
 
 IBKR_MODES: Set[str] = {"paper", "semi", "auto"}
@@ -757,6 +760,59 @@ class CommandRegistry:
                                 description="Order ID to confirm."),
                 ],
                 examples=["ibkr confirm ORD-001", "confirmar ordem ORD-001"],
+            ),
+
+            # ── Gateway (Render CPG) ─────────────────────────────────────────
+            CommandDef(
+                verb="gateway", target="status",
+                handler_key="gateway_status",
+                description="Show IBKR gateway connection status and authentication state.",
+                aliases=["show:gateway"],
+                examples=["gateway status", "gateway", "show gateway"],
+            ),
+            CommandDef(
+                verb="gateway", target="login",
+                handler_key="gateway_login",
+                description="Attempt gateway authentication; returns browser URL if manual login required.",
+                examples=["gateway login", "gateway auth", "login gateway"],
+            ),
+            CommandDef(
+                verb="gateway", target="accounts",
+                handler_key="gateway_accounts",
+                description="List all IBKR accounts available via the gateway.",
+                examples=["gateway accounts", "gateway contas"],
+            ),
+            CommandDef(
+                verb="gateway", target="positions",
+                handler_key="gateway_positions",
+                description="Fetch live open positions directly from the Render gateway.",
+                examples=["gateway positions", "gateway posições"],
+            ),
+            CommandDef(
+                verb="gateway", target="pnl",
+                handler_key="gateway_pnl",
+                description="Fetch partitioned P&L (realized, unrealized, daily) from the gateway.",
+                examples=["gateway pnl", "gateway lucro", "gateway resultado"],
+            ),
+            CommandDef(
+                verb="gateway", target="snapshot",
+                handler_key="gateway_snapshot",
+                description="Get market data snapshot for an IBKR contract ID (conid).",
+                params=[
+                    ParamSchema("conid", "int", required=True,
+                                description="IBKR contract ID (e.g. 265598 for AAPL)."),
+                ],
+                examples=["gateway snapshot 265598", "gateway snapshot 8314"],
+            ),
+            CommandDef(
+                verb="gateway", target="contract",
+                handler_key="gateway_contract",
+                description="Get full contract details for an IBKR contract ID (conid).",
+                params=[
+                    ParamSchema("conid", "int", required=True,
+                                description="IBKR contract ID."),
+                ],
+                examples=["gateway contract 265598", "gateway contract 8314"],
             ),
         ]
 

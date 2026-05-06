@@ -101,6 +101,7 @@ from .ibkr_integration import IBKRIntegration, OrderResult, Position
 from .capital_manager import CapitalManager, CapitalState
 from .risk_manager import RiskManager, RiskState
 from .ibkr_client_portal import IBKRClientPortal, CPGAuthError, CPGRequestError
+from .ibkr_gateway import IBKRGateway, RENDER_URL
 
 # Runtime
 from .runtime import NexusRuntime
@@ -134,6 +135,7 @@ __all__ = [
     "CapitalManager", "CapitalState",
     "RiskManager", "RiskState",
     "IBKRClientPortal", "CPGAuthError", "CPGRequestError",
+    "IBKRGateway", "RENDER_URL",
     # Runtime
     "NexusRuntime",
 ]

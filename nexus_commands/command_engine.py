@@ -285,6 +285,14 @@ class CommandEngine:
             "ibkr_safe_mode":        self._h_ibkr_safe_mode,
             "ibkr_resume":           self._h_ibkr_resume,
             "ibkr_confirm":          self._h_ibkr_confirm,
+            # Gateway (Render CPG)
+            "gateway_status":        self._h_gateway_status,
+            "gateway_login":         self._h_gateway_login,
+            "gateway_accounts":      self._h_gateway_accounts,
+            "gateway_positions":     self._h_gateway_positions,
+            "gateway_pnl":           self._h_gateway_pnl,
+            "gateway_snapshot":      self._h_gateway_snapshot,
+            "gateway_contract":      self._h_gateway_contract,
         }
 
     # ── run ──────────────────────────────────────────────────────────────
@@ -1120,6 +1128,193 @@ class CommandEngine:
         except Exception as exc:
             return CommandResponse(ok=False, command=str(intent),
                                    message=f"IBKR confirm failed: {exc}")
+
+    # ------------------------------------------------------------------
+    # Gateway (Render CPG) handlers
+    # ------------------------------------------------------------------
+
+    def _get_gateway(self):
+        """
+        Return an IBKRGateway singleton stored on the runtime, or build one
+        from config on first call.  Raises RuntimeError if gateway is disabled.
+        """
+        from nexus_runtime.ibkr_gateway import IBKRGateway, RENDER_URL
+
+        gw = getattr(self._runtime, "_gateway", None)
+        if gw is None:
+            ibkr_cfg = getattr(self._runtime._config, "ibkr", None)
+            base_url = getattr(ibkr_cfg, "cpg_base_url", RENDER_URL) if ibkr_cfg else RENDER_URL
+            verify_ssl = getattr(ibkr_cfg, "cpg_verify_ssl", True) if ibkr_cfg else True
+            timeout_s  = getattr(ibkr_cfg, "cpg_timeout_s",  15)   if ibkr_cfg else 15
+            acct_id    = getattr(ibkr_cfg, "cpg_account_id", "")    if ibkr_cfg else ""
+            paper      = (getattr(ibkr_cfg, "mode", "paper") == "paper") if ibkr_cfg else True
+
+            gw = IBKRGateway(
+                base_url    = base_url,
+                account_id  = acct_id,
+                verify_ssl  = verify_ssl,
+                timeout_s   = timeout_s,
+                paper       = paper,
+            )
+            self._runtime._gateway = gw
+        return gw
+
+    def _h_gateway_status(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            gw   = self._get_gateway()
+            data = gw.status()
+            auth = data.get("authenticated", False)
+            msg  = (
+                f"Gateway {'authenticated' if auth else 'NOT authenticated'}  "
+                f"connected={data.get('connected', False)}  "
+                f"url={data.get('base_url', '?')}"
+            )
+            if not auth:
+                msg += f"  → Open {data.get('browser_url', '')} in a browser to log in."
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=data)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Gateway status failed: {exc}")
+
+    def _h_gateway_login(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            gw   = self._get_gateway()
+            data = gw.login()
+            auth = data.get("authenticated", False)
+            msg  = data.get("message", "")
+            if not auth:
+                msg += f"  Browser URL: {data.get('browser_url', '')}"
+            warnings = [] if auth else [
+                "You must authenticate via browser before the gateway will accept API calls.",
+                f"Open this URL and log in with your IBKR credentials: {data.get('browser_url', '')}",
+            ]
+            return CommandResponse(
+                ok=auth, command=str(intent), message=msg,
+                data=data, warnings=warnings,
+            )
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Gateway login failed: {exc}")
+
+    def _h_gateway_accounts(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            gw       = self._get_gateway()
+            accounts = gw.get_accounts()
+            if not accounts:
+                return CommandResponse(ok=True, command=str(intent),
+                                       message="No accounts found (not authenticated?).",
+                                       data={"accounts": []})
+            lines = [f"  {a.get('accountId', a.get('id', '?'))}  "
+                     f"type={a.get('type', '?')}  "
+                     f"currency={a.get('currency', '?')}"
+                     for a in accounts]
+            msg = f"{len(accounts)} account(s):\n" + "\n".join(lines)
+            return CommandResponse(ok=True, command=str(intent), message=msg,
+                                   data={"accounts": accounts})
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Gateway accounts failed: {exc}")
+
+    def _h_gateway_positions(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            gw        = self._get_gateway()
+            positions = gw.get_positions()
+            if not positions:
+                return CommandResponse(ok=True, command=str(intent),
+                                       message="No open positions via gateway.",
+                                       data={"positions": []})
+            lines = []
+            for p in positions:
+                size = p.get("position", p.get("pos", "?"))
+                pnl  = p.get("unrealizedPnl", 0.0)
+                sign = "+" if (pnl or 0) >= 0 else ""
+                lines.append(
+                    f"  {p.get('ticker', p.get('symbol', '?'))}  "
+                    f"size={size}  "
+                    f"avg={p.get('avgCost', 0):.4f}  "
+                    f"mktVal={p.get('mktValue', 0):.2f}  "
+                    f"pnl={sign}{pnl:.2f}"
+                )
+            msg = f"{len(positions)} open position(s):\n" + "\n".join(lines)
+            return CommandResponse(ok=True, command=str(intent), message=msg,
+                                   data={"positions": positions})
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Gateway positions failed: {exc}")
+
+    def _h_gateway_pnl(self, intent: ParsedIntent) -> CommandResponse:
+        try:
+            gw  = self._get_gateway()
+            pnl = gw.get_pnl()
+            if "error" in pnl:
+                return CommandResponse(ok=False, command=str(intent),
+                                       message=f"Gateway P&L error: {pnl['error']}")
+            upnl = pnl.get("upnl", {})
+            lines = []
+            for acct, vals in upnl.items():
+                if isinstance(vals, dict):
+                    nl  = vals.get("nl",  vals.get("NL",  0.0))
+                    dpl = vals.get("dpl", vals.get("DPL", 0.0))
+                    upl = vals.get("upl", vals.get("UPL", 0.0))
+                    lines.append(
+                        f"  {acct}  NLV={nl:.2f}  daily_pnl={dpl:+.2f}  unrealized={upl:+.2f}"
+                    )
+            msg = (f"{len(upnl)} account(s) P&L:\n" + "\n".join(lines)) if lines else "P&L data received."
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=pnl)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Gateway P&L failed: {exc}")
+
+    def _h_gateway_snapshot(self, intent: ParsedIntent) -> CommandResponse:
+        conid_raw = intent.params.get("conid")
+        if not conid_raw:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="conid required. Example: gateway snapshot 265598")
+        try:
+            conid = int(conid_raw)
+            gw    = self._get_gateway()
+            snap  = gw.get_snapshot(conid)
+            if "error" in snap:
+                return CommandResponse(ok=False, command=str(intent),
+                                       message=f"Snapshot error: {snap['error']}", data=snap)
+            symbol    = snap.get("symbol", str(conid))
+            last      = snap.get("last_price", "?")
+            bid       = snap.get("bid", "?")
+            ask       = snap.get("ask", "?")
+            vol       = snap.get("volume", "?")
+            msg = (
+                f"{symbol} (conid={conid})  "
+                f"last={last}  bid={bid}  ask={ask}  volume={vol}"
+            )
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=snap)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Gateway snapshot failed: {exc}")
+
+    def _h_gateway_contract(self, intent: ParsedIntent) -> CommandResponse:
+        conid_raw = intent.params.get("conid")
+        if not conid_raw:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message="conid required. Example: gateway contract 265598")
+        try:
+            conid = int(conid_raw)
+            gw    = self._get_gateway()
+            info  = gw.get_contract_info(conid)
+            if "error" in info:
+                return CommandResponse(ok=False, command=str(intent),
+                                       message=f"Contract info error: {info['error']}", data=info)
+            symbol   = info.get("symbol", info.get("ticker", str(conid)))
+            sec_type = info.get("secType", info.get("instrumentType", "?"))
+            exchange = info.get("exchange", info.get("listingExchange", "?"))
+            currency = info.get("currency", "?")
+            msg = (
+                f"{symbol} (conid={conid})  "
+                f"type={sec_type}  exchange={exchange}  currency={currency}"
+            )
+            return CommandResponse(ok=True, command=str(intent), message=msg, data=info)
+        except Exception as exc:
+            return CommandResponse(ok=False, command=str(intent),
+                                   message=f"Gateway contract info failed: {exc}")
 
     # ------------------------------------------------------------------
     # History
