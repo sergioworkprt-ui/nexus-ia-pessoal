@@ -27,3 +27,46 @@
 {"ts": "2026-05-06T17:40:50.507534+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
 {"ts": "2026-05-06T17:40:50.725741+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
 {"ts": "2026-05-06T17:40:50.725933+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
+{"ts": "2026-05-06T17:42:42.310222+00:00", "action": "init", "base_url": "https://ibkr-gateway-04-08.onrender.com", "paper": true, "verify_ssl": false}
+{"ts": "2026-05-06T17:42:42.310534+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:42:42.932034+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:42:42.932219+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
+{"ts": "2026-05-06T17:42:42.932519+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:42:42.974190+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:42:42.974369+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
+{"ts": "2026-05-06T17:42:42.974503+00:00", "action": "req", "method": "POST", "path": "/iserver/reauthenticate", "body_bytes": 2}
+{"ts": "2026-05-06T17:42:42.984389+00:00", "action": "http_error", "status": 403, "path": "/iserver/reauthenticate", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:42:42.984554+00:00", "action": "reauthenticate_failed", "error": "HTTP 403 on POST /iserver/reauthenticate: Host not in allowlist"}
+{"ts": "2026-05-06T17:42:43.984917+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:42:43.995018+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:42:43.995169+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
+{"ts": "2026-05-06T17:42:43.995635+00:00", "action": "req", "method": "GET", "path": "/portfolio/accounts", "body_bytes": 0}
+{"ts": "2026-05-06T17:42:44.035476+00:00", "action": "http_error", "status": 403, "path": "/portfolio/accounts", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:42:44.035595+00:00", "action": "get_accounts_error", "error": "HTTP 403 on GET /portfolio/accounts: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:12.499362+00:00", "action": "init", "base_url": "https://ibkr-gateway-04-08.onrender.com", "paper": true, "verify_ssl": false}
+{"ts": "2026-05-06T17:43:12.499768+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:43:12.811894+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:12.812073+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:12.812248+00:00", "action": "req", "method": "POST", "path": "/iserver/reauthenticate", "body_bytes": 2}
+{"ts": "2026-05-06T17:43:12.846783+00:00", "action": "http_error", "status": 403, "path": "/iserver/reauthenticate", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:12.846955+00:00", "action": "reauthenticate_failed", "error": "HTTP 403 on POST /iserver/reauthenticate: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:13.847326+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:43:13.893855+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:13.894046+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:13.924199+00:00", "action": "req", "method": "GET", "path": "/iserver/auth/status", "body_bytes": 0}
+{"ts": "2026-05-06T17:43:13.964270+00:00", "action": "http_error", "status": 403, "path": "/iserver/auth/status", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:13.964432+00:00", "action": "auth_status_error", "error": "HTTP 403 on GET /iserver/auth/status: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:13.987196+00:00", "action": "req", "method": "GET", "path": "/portfolio/accounts", "body_bytes": 0}
+{"ts": "2026-05-06T17:43:14.030392+00:00", "action": "http_error", "status": 403, "path": "/portfolio/accounts", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:14.030538+00:00", "action": "get_accounts_error", "error": "HTTP 403 on GET /portfolio/accounts: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:14.052516+00:00", "action": "req", "method": "GET", "path": "/portfolio/accounts", "body_bytes": 0}
+{"ts": "2026-05-06T17:43:14.075138+00:00", "action": "http_error", "status": 403, "path": "/portfolio/accounts", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:14.075291+00:00", "action": "get_accounts_error", "error": "HTTP 403 on GET /portfolio/accounts: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:14.075428+00:00", "action": "req", "method": "POST", "path": "/iserver/reauthenticate", "body_bytes": 2}
+{"ts": "2026-05-06T17:43:14.130710+00:00", "action": "http_error", "status": 403, "path": "/iserver/reauthenticate", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:14.130914+00:00", "action": "reauthenticate_failed", "error": "HTTP 403 on POST /iserver/reauthenticate: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:15.131263+00:00", "action": "req", "method": "GET", "path": "/portfolio/accounts", "body_bytes": 0}
+{"ts": "2026-05-06T17:43:15.191834+00:00", "action": "http_error", "status": 403, "path": "/portfolio/accounts", "body": "Host not in allowlist"}
+{"ts": "2026-05-06T17:43:15.191986+00:00", "action": "get_accounts_error", "error": "HTTP 403 on GET /portfolio/accounts: Host not in allowlist"}
+{"ts": "2026-05-06T17:43:15.212092+00:00", "action": "req", "method": "GET", "path": "/iserver/account/pnl/partitioned", "body_bytes": 0}
+{"ts": "2026-05-06T17:43:15.224179+00:00", "action": "http_error", "status": 403, "path": "/iserver/account/pnl/partitioned", "body": "Host not in allowlist"}
