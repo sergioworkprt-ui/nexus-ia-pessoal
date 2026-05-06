@@ -1144,6 +1144,9 @@ class CommandEngine:
         if gw is None:
             ibkr_cfg = getattr(self._runtime._config, "ibkr", None)
             base_url = getattr(ibkr_cfg, "cpg_base_url", RENDER_URL) if ibkr_cfg else RENDER_URL
+            # Fall back to Render URL when config still has the localhost default
+            if not base_url or "localhost" in base_url:
+                base_url = RENDER_URL
             verify_ssl = getattr(ibkr_cfg, "cpg_verify_ssl", True) if ibkr_cfg else True
             timeout_s  = getattr(ibkr_cfg, "cpg_timeout_s",  15)   if ibkr_cfg else 15
             acct_id    = getattr(ibkr_cfg, "cpg_account_id", "")    if ibkr_cfg else ""
