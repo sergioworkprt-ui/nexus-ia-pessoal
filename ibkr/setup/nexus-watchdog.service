@@ -1,0 +1,13 @@
+[Unit]
+Description=NEXUS Watchdog
+After=nexus-ibkr.service
+
+[Service]
+Type=simple
+ExecStart=/opt/nexus-ibkr/setup/watchdog.sh
+Restart=always
+RestartSec=30
+StandardOutput=append:/var/log/nexus/watchdog.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,2 @@
+ib-insync>=0.9.86
+EventKit>=1.2.1

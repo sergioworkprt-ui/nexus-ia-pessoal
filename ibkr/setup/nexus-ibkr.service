@@ -1,0 +1,19 @@
+[Unit]
+Description=NEXUS IBKR Trading System
+After=network-online.target nexus-ibgateway.service
+Wants=nexus-ibgateway.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nexus-ibkr
+ExecStart=/opt/nexus-venv/bin/python main.py
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=5
+StandardOutput=append:/var/log/nexus/nexus.log
+StandardError=append:/var/log/nexus/nexus-error.log
+EnvironmentFile=-/opt/nexus-ibkr/.env
+
+[Install]
+WantedBy=multi-user.target

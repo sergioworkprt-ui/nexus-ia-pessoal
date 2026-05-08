@@ -1,0 +1,18 @@
+[Unit]
+Description=IBKR IB Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/nexus-ibkr/setup/ibgateway.sh
+Restart=always
+RestartSec=15
+StartLimitIntervalSec=120
+StartLimitBurst=5
+StandardOutput=append:/var/log/nexus/ibgateway.log
+StandardError=append:/var/log/nexus/ibgateway-error.log
+Environment=DISPLAY=:99
+
+[Install]
+WantedBy=multi-user.target
