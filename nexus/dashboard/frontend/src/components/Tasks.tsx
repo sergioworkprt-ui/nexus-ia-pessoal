@@ -71,7 +71,11 @@ export default function Tasks() {
               </div>
               <p className="text-sm truncate">{t.title}</p>
               {t.error && <p className="text-xs text-nexus-danger mt-1">{t.error}</p>}
-              {t.result && <p className="text-xs text-nexus-success mt-1">{JSON.stringify(t.result).slice(0, 80)}</p>}
+              {t.result != null && (
+                <p className="text-xs text-nexus-success mt-1">
+                  {JSON.stringify(t.result as object).slice(0, 80)}
+                </p>
+              )}
             </div>
             <div className="flex gap-1 shrink-0">
               {t.status === 'waiting_approval' && (

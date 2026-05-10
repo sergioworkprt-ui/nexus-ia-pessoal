@@ -15,8 +15,6 @@ import Logs from './components/Logs'
 import Evolution from './components/Evolution'
 import { wsUrl } from './api'
 
-const PANELS: Record<Tab, React.ReactNode> = {} as Record<Tab, React.ReactNode>
-
 export default function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [avatarState, setAvatarState] = useState<AvatarState>('idle')
