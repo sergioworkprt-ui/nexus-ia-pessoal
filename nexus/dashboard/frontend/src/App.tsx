@@ -29,7 +29,7 @@ export default function App() {
       try {
         ws = new WebSocket(wsUrl())
         wsRef.current = ws
-        ws.onopen = () => setConnected(true)
+        ws.onopen  = () => setConnected(true)
         ws.onclose = () => {
           setConnected(false)
           retry = setTimeout(connect, 4000)
@@ -67,19 +67,29 @@ export default function App() {
   return (
     <div className="flex h-screen bg-nexus-bg text-white overflow-hidden">
       <Sidebar active={tab} onChange={setTab} connected={connected} />
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <header className="flex items-center justify-between px-5 py-3 border-b border-nexus-border shrink-0">
-          <div className="flex items-center gap-3">
+
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+        {/* Top bar */}
+        <header className="flex items-center justify-between px-4 py-2.5 border-b border-nexus-border shrink-0">
+          <div className="flex items-center gap-2.5">
+            {/* Live state avatar — small indicator, always visible */}
             <Avatar state={avatarState} size="sm" />
-            <span className="font-bold tracking-widest text-nexus-accent uppercase">NEXUS</span>
-            <span className="text-xs text-gray-500">v2.0</span>
+            <span className="font-semibold tracking-widest text-nexus-accent uppercase text-sm">
+              NEXUS
+            </span>
+            <span className="text-xs text-gray-600">v2.0</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${connected ? 'bg-nexus-success/20 text-nexus-success' : 'bg-nexus-danger/20 text-nexus-danger'}`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${
+              connected
+                ? 'bg-nexus-success/20 text-nexus-success'
+                : 'bg-nexus-danger/20  text-nexus-danger'
+            }`}>
               {connected ? 'WS online' : 'WS offline'}
             </span>
           </div>
         </header>
+
         <main className="flex-1 overflow-hidden">
           {panels[tab]}
         </main>
@@ -105,7 +115,11 @@ function About() {
           'Monitor de sistema',
           'Logs em tempo real',
           'PWA installável',
-        ].map(f => <li key={f} className="flex gap-2"><span className="text-nexus-success">✓</span>{f}</li>)}
+        ].map(f => (
+          <li key={f} className="flex gap-2">
+            <span className="text-nexus-success">✓</span>{f}
+          </li>
+        ))}
       </ul>
     </div>
   )
