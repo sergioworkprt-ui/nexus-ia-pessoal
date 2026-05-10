@@ -1,25 +1,19 @@
-"""NEXUS Dashboard — unified entry point.
-
-Run via systemd:
-    /opt/nexus/venv/bin/python -m nexus.dashboard.server
-
-Or directly (with PYTHONPATH set):
-    PYTHONPATH=/opt/nexus python nexus/dashboard/server.py
-"""
+"""NEXUS Dashboard server — serves React build + proxies /api/* to NEXUS API."""
 from __future__ import annotations
 
+import httpx
 import os
+from pathlib import Path
 
-import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-# All imports are absolute — no relative imports
-from nexus.dashboard.reader import get_log_lines, get_positions, get_status
-from nexus.dashboard.pages import router as pages_router
+API_BASE = os.getenv("NEXUS_API_URL", "http://localhost:8000")
+PORT = int(os.getenv("DASHBOARD_PORT", "9000"))
 
-app = FastAPI(title="NEXUS Dashboard", version="1.0.0")
+app = FastAPI(title="NEXUS Dashboard", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,59 +22,49 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount server-side rendered pages
-app.include_router(pages_router)
+_client = httpx.AsyncClient(base_url=API_BASE, timeout=60.0)
 
 
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok", "service": "nexus-dashboard"}
-
-
-@app.get("/api/status")
-async def api_status() -> JSONResponse:
-    data = await get_status()
-    code = 503 if "error" in data else 200
-    return JSONResponse(data, status_code=code)
-
-
-@app.get("/api/positions")
-async def api_positions() -> JSONResponse:
-    data = await get_positions()
-    return JSONResponse(data)
-
-
-@app.get("/api/logs/{service}")
-async def api_logs(service: str, lines: int = 100) -> JSONResponse:
-    allowed = {"api", "core"}
-    if service not in allowed:
-        return JSONResponse({"error": "unknown_service"}, status_code=400)
-    return JSONResponse({"lines": get_log_lines(service, lines)})
-
-
-@app.websocket("/ws/logs/{service}")
-async def ws_logs(websocket: WebSocket, service: str) -> None:
-    import asyncio
-    allowed = {"api", "core"}
-    if service not in allowed:
-        await websocket.close(code=4004)
-        return
-    await websocket.accept()
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def proxy(path: str, request: Request) -> Response:
+    """Transparent reverse proxy to NEXUS API."""
+    body = await request.body()
+    headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ("host", "content-length")
+    }
     try:
-        while True:
-            lines = get_log_lines(service, 50)
-            await websocket.send_json({"lines": lines})
-            await asyncio.sleep(2)
-    except WebSocketDisconnect:
-        pass
+        resp = await _client.request(
+            method=request.method,
+            url=f"/{path}",
+            content=body,
+            headers=headers,
+            params=dict(request.query_params),
+        )
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            headers=dict(resp.headers),
+        )
+    except httpx.ConnectError:
+        return JSONResponse({"error": "api_unavailable", "detail": "NEXUS API not reachable"}, status_code=503)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": "proxy_error", "detail": str(exc)}, status_code=502)
+
+
+# Serve React static build — must be registered AFTER /api proxy
+_dist = Path(__file__).parent / "frontend" / "dist"
+if _dist.is_dir():
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="static")
+else:
+    @app.get("/")
+    async def not_built() -> JSONResponse:
+        return JSONResponse(
+            {"error": "frontend_not_built", "detail": "Run: npm ci && npm run build inside nexus/dashboard/frontend/"},
+            status_code=503,
+        )
 
 
 if __name__ == "__main__":
-    host = os.getenv("DASHBOARD_HOST", "0.0.0.0")
-    port = int(os.getenv("DASHBOARD_PORT", "9000"))
-    uvicorn.run(
-        "nexus.dashboard.server:app",
-        host=host,
-        port=port,
-        reload=False,
-    )
+    import uvicorn
+    uvicorn.run("nexus.dashboard.server:app", host="0.0.0.0", port=PORT, reload=False)

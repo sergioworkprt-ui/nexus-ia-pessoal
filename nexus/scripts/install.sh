@@ -1,356 +1,263 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NEXUS — Instalador para Ubuntu 22.04 (VPS / Google Cloud)
+# NEXUS AI — VPS Installer (Ubuntu 22.04+)
+# Usage:
+#   sudo bash install.sh              # full install
+#   sudo bash install.sh --safe-mode  # skip apt packages (already installed)
+#   sudo bash install.sh --update     # re-deploy code + restart services
 # =============================================================================
-# Uso: sudo bash nexus/scripts/install.sh [FLAGS]
-#
-# FLAGS:
-#   --safe-mode      Não toca em pacotes Ubuntu — só Docker, venv, serviços
-#   --skip-docker    Não instala Docker
-#   --skip-python    Não instala Python venv
-#   --no-services    Não inicia serviços systemd
-# =============================================================================
-set -uo pipefail   # SEM -e : o script nunca para por erros individuais
+set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+# ── colours ──────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+ok()   { echo -e "${GREEN}[OK]${NC}  $*"; }
+info() { echo -e "${BLUE}[--]${NC}  $*"; }
+warn() { echo -e "${YELLOW}[!!]${NC}  $*"; }
+die()  { echo -e "${RED}[ERR]${NC} $*" >&2; exit 1; }
 
-log()  { echo -e "${GREEN}[NEXUS]${NC} $*"; }
-info() { echo -e "${CYAN}[INFO]${NC}  $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-err()  { echo -e "${RED}[ERRO]${NC}  $*" >&2; }
-step() { echo -e "\n${BOLD}${CYAN}━━━ $* ━━━${NC}"; }
-
-PKGS_OK=(); PKGS_FAIL=()
-
-SAFE_MODE=0; SKIP_DOCKER=0; SKIP_PYTHON=0; NO_SERVICES=0
-for arg in "${@:-}"; do
-  case $arg in
-    --safe-mode)   SAFE_MODE=1   ;;
-    --skip-docker) SKIP_DOCKER=1 ;;
-    --skip-python) SKIP_PYTHON=1 ;;
-    --no-services) NO_SERVICES=1 ;;
-    *) warn "Flag desconhecida: $arg" ;;
+# ── flags ────────────────────────────────────────────────────────────────────
+SAFE_MODE=false
+UPDATE_ONLY=false
+for arg in "$@"; do
+  case "$arg" in
+    --safe-mode)  SAFE_MODE=true ;;
+    --update)     UPDATE_ONLY=true ;;
   esac
 done
 
-[[ $EUID -eq 0 ]] || { err "Corre como root: sudo bash install.sh"; exit 1; }
+[[ $EUID -eq 0 ]] || die "Run as root: sudo bash $0"
 
-export DEBIAN_FRONTEND=noninteractive
-export NEEDRESTART_MODE=a
-export NEEDRESTART_SUSPEND=1
+# ── paths ────────────────────────────────────────────────────────────────────
+NEXUS_HOME=/opt/nexus
+VENV=$NEXUS_HOME/venv
+LOG_DIR=/var/log/nexus
+DATA_DIR=/data/nexus
+FRONTEND=$NEXUS_HOME/nexus/dashboard/frontend
+SERVICE_USER=nexus
 
-try_install_pkg() {
-  local pkg="$1"
+echo -e "\n${BLUE}══════════════════════════════════════════════${NC}"
+echo -e "${BLUE}   NEXUS AI — Instalador VPS${NC}"
+echo -e "${BLUE}══════════════════════════════════════════════${NC}\n"
+
+# ── 1. System packages ───────────────────────────────────────────────────────
+install_pkg() {
+  local pkg=$1
   if dpkg -s "$pkg" &>/dev/null; then
-    PKGS_OK+=("$pkg"); return 0
-  fi
-  apt-get install -yq --no-install-recommends \
-    -o Dpkg::Options::="--force-confdef" \
-    -o Dpkg::Options::="--force-confold" \
-    -o APT::Get::Fix-Broken=true \
-    "$pkg" &>/tmp/nexus_pkg_err 2>&1
-  if [[ $? -eq 0 ]]; then
-    log "  [OK]      $pkg"; PKGS_OK+=("$pkg")
+    info "$pkg already installed"
   else
-    local reason; reason=$(grep -m1 'E:' /tmp/nexus_pkg_err 2>/dev/null | sed 's/^E: //' || true)
-    warn "  [FALHOU]  $pkg — ${reason:-erro desconhecido}"; PKGS_FAIL+=("$pkg")
+    info "Installing $pkg…"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$pkg" || \
+      warn "Could not install $pkg — continuing"
   fi
-  return 0
 }
-install_pkgs() { for pkg in "$@"; do try_install_pkg "$pkg"; done; }
 
-# ---------------------------------------------------------------------------
-step "Reparar APT"
-rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock \
-       /var/cache/apt/archives/lock /var/lib/apt/lists/lock 2>/dev/null || true
-dpkg --configure -a 2>/dev/null || warn "dpkg --configure -a (ignorado)"
-apt-get -yq -o Dpkg::Options::="--force-confdef" \
-             -o Dpkg::Options::="--force-confold" \
-             --fix-broken install 2>/dev/null || warn "--fix-broken (ignorado)"
-HELD=$(dpkg --audit 2>/dev/null | grep -oP '^\S+' || true)
-[[ -n "$HELD" ]] && echo "$HELD" | while read -r p; do
-  apt-mark unhold "$p" 2>/dev/null && warn "  unhold: $p" || true
-done
-apt-get update -qq 2>/dev/null || warn "apt-get update (ignorado)"
+if [[ $SAFE_MODE == false && $UPDATE_ONLY == false ]]; then
+  info "Updating apt cache…"
+  apt-get update -qq
 
-# ---------------------------------------------------------------------------
-if [[ $SAFE_MODE -eq 0 ]]; then
-  step "Dependências de sistema (individual)"
-  install_pkgs ca-certificates curl gnupg wget git unzip \
-               lsb-release software-properties-common apt-transport-https
-  install_pkgs python3.11 python3.11-venv python3.11-dev python3-pip
-  install_pkgs build-essential
-  install_pkgs portaudio19-dev libsndfile1 ffmpeg espeak
-else
-  info "[--safe-mode] Pacotes Ubuntu ignorados."
-fi
-
-# ---------------------------------------------------------------------------
-if [[ $SKIP_DOCKER -eq 0 ]]; then
-  step "Docker CE"
-  if command -v docker &>/dev/null; then
-    info "Docker já instalado: $(docker --version 2>/dev/null || true)"
-  else
-    for old in docker docker-engine docker.io containerd runc \
-                docker-compose docker-compose-plugin; do
-      apt-get remove -yq "$old" 2>/dev/null || true
-    done
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg 2>/dev/null
-    chmod a+r /etc/apt/keyrings/docker.gpg
-    ARCH=$(dpkg --print-architecture)
-    CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME:-jammy}")
-    echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/ubuntu ${CODENAME} stable" \
-        > /etc/apt/sources.list.d/docker.list
-    apt-get update -qq 2>/dev/null || true
-    install_pkgs docker-ce docker-ce-cli containerd.io \
-                 docker-buildx-plugin docker-compose-plugin
-    command -v docker &>/dev/null \
-      && log "Docker instalado: $(docker --version)" \
-      || warn "Docker não instalado."
-  fi
-  command -v docker &>/dev/null && {
-    systemctl enable docker --now 2>/dev/null || true
-    docker run --rm hello-world &>/dev/null \
-      && log "Docker a funcionar." || warn "docker hello-world falhou."
-  }
-else
-  info "[--skip-docker] Docker ignorado."
-fi
-
-# ---------------------------------------------------------------------------
-step "Utilizador nexus e directorias"
-id nexus &>/dev/null || useradd -r -m -s /bin/bash nexus
-command -v docker &>/dev/null && usermod -aG docker nexus 2>/dev/null || true
-
-# Criar directorias com ownership correcto ANTES de qualquer serviço arrancar
-mkdir -p /opt/nexus /data/nexus /var/log/nexus
-chown -R nexus:nexus /opt/nexus /data/nexus /var/log/nexus
-chmod 775 /var/log/nexus
-
-# Limpar logs antigos criados por root que causam PermissionError
-if [[ -d /opt/nexus/logs ]]; then
-  chown -R nexus:nexus /opt/nexus/logs 2>/dev/null || true
-  chmod -R 664 /opt/nexus/logs 2>/dev/null || true
-  chmod 775 /opt/nexus/logs 2>/dev/null || true
-  warn "Directoria /opt/nexus/logs encontrada — ownership corrigido."
-fi
-
-# ---------------------------------------------------------------------------
-step "Repositório NEXUS"
-REPO_URL="https://github.com/sergioworkprt-ui/nexus-ia-pessoal.git"
-REPO_BRANCH="claude/create-test-file-d1AY6"
-
-if [[ -d /opt/nexus/.git ]]; then
-  git -C /opt/nexus fetch --all -q 2>/dev/null || warn "git fetch falhou"
-  git -C /opt/nexus checkout "$REPO_BRANCH" -q 2>/dev/null || warn "checkout falhou"
-  git -C /opt/nexus pull --ff-only origin "$REPO_BRANCH" -q 2>/dev/null \
-    || warn "git pull falhou — a usar versão local"
-else
-  git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" /opt/nexus 2>/dev/null \
-    || warn "git clone falhou"
-fi
-chown -R nexus:nexus /opt/nexus 2>/dev/null || true
-
-# ---------------------------------------------------------------------------
-if [[ $SKIP_PYTHON -eq 0 ]]; then
-  step "Python Virtual Environment"
-  VENV=/opt/nexus/venv
-  PY_BIN=""
-  for candidate in python3.11 python3 python; do
-    command -v "$candidate" &>/dev/null && { PY_BIN=$(command -v "$candidate"); break; }
+  for pkg in python3 python3-pip python3-venv python3-dev \
+              build-essential libssl-dev libffi-dev \
+              git curl wget ca-certificates gnupg lsb-release \
+              ffmpeg portaudio19-dev \
+              systemd; do
+    install_pkg "$pkg"
   done
 
-  if [[ -z "$PY_BIN" ]]; then
-    warn "Nenhum Python encontrado — venv ignorado."; PKGS_FAIL+=("python-venv")
+  # Node.js 20 via NodeSource
+  if ! command -v node &>/dev/null || [[ $(node --version | cut -d. -f1 | tr -d v) -lt 20 ]]; then
+    info "Installing Node.js 20…"
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    install_pkg nodejs
   else
-    info "Python: $PY_BIN ($($PY_BIN --version 2>&1))"
-    [[ ! -d "$VENV" ]] && "$PY_BIN" -m venv "$VENV" 2>/dev/null \
-      || { warn "venv falhou"; PKGS_FAIL+=("python-venv"); }
-
-    if [[ -d "$VENV" ]]; then
-      "$VENV"/bin/pip install -q --upgrade pip wheel setuptools 2>/dev/null || true
-      REQ=/opt/nexus/nexus/requirements.txt
-      if [[ -f "$REQ" ]]; then
-        if ! "$VENV"/bin/pip install -q --no-cache-dir -r "$REQ" 2>/tmp/nexus_pip_err; then
-          warn "pip install -r falhou — a tentar pacote a pacote..."
-          while IFS= read -r line; do
-            [[ "$line" =~ ^\s*# ]] && continue
-            [[ -z "${line//[[:space:]]/}" ]] && continue
-            pkg_name=$(echo "$line" | sed 's/[>=<!].*//' | tr -d ' ')
-            "$VENV"/bin/pip install -q --no-cache-dir "$line" 2>/dev/null \
-              && PKGS_OK+=("py:$pkg_name") \
-              || { warn "  [FALHOU pip] $pkg_name"; PKGS_FAIL+=("py:$pkg_name"); }
-          done < "$REQ"
-        else
-          PKGS_OK+=("python-requirements"); log "requirements.txt instalado."
-        fi
-      fi
-    fi
+    ok "Node.js $(node --version) already present"
   fi
+  ok "System packages ready"
 else
-  info "[--skip-python] Python venv ignorado."
+  warn "Skipping apt packages (safe/update mode)"
 fi
 
-# ---------------------------------------------------------------------------
-step "Configuração .env"
-ENV_FILE=/opt/nexus/.env
-if [[ ! -f "$ENV_FILE" ]]; then
-  [[ -f /opt/nexus/nexus/.env.example ]] \
-    && cp /opt/nexus/nexus/.env.example "$ENV_FILE" \
-    || cat > "$ENV_FILE" <<'ENVEOF'
-NEXUS_API_KEY=nexus-change-me
-NEXUS_SECRET_KEY=nexus-change-me
+# ── 2. System user ───────────────────────────────────────────────────────────
+if ! id -u $SERVICE_USER &>/dev/null; then
+  info "Creating system user '$SERVICE_USER'…"
+  useradd --system --shell /usr/sbin/nologin --home-dir $NEXUS_HOME \
+    --create-home --groups audio $SERVICE_USER
+  ok "User $SERVICE_USER created"
+else
+  ok "User $SERVICE_USER already exists"
+fi
+
+# ── 3. Directories ───────────────────────────────────────────────────────────
+for d in "$NEXUS_HOME" "$LOG_DIR" "$DATA_DIR" "$DATA_DIR/memory" "$DATA_DIR/tasks" "$DATA_DIR/evolution"; do
+  mkdir -p "$d"
+done
+chown -R $SERVICE_USER:$SERVICE_USER "$LOG_DIR" "$DATA_DIR"
+chmod -R 775 "$LOG_DIR" "$DATA_DIR"
+ok "Directories ready"
+
+# ── 4. Clone / update code ───────────────────────────────────────────────────
+if [[ ! -d $NEXUS_HOME/.git ]]; then
+  info "Cloning NEXUS repository…"
+  git clone https://github.com/sergioworkprt-ui/nexus-ia-pessoal.git $NEXUS_HOME
+  cd $NEXUS_HOME
+  git checkout claude/create-test-file-d1AY6
+else
+  info "Updating NEXUS code…"
+  cd $NEXUS_HOME
+  git fetch origin
+  git checkout claude/create-test-file-d1AY6
+  git pull origin claude/create-test-file-d1AY6
+fi
+chown -R $SERVICE_USER:$SERVICE_USER $NEXUS_HOME
+ok "Code up to date"
+
+# ── 5. Python venv + dependencies ────────────────────────────────────────────
+if [[ ! -d $VENV ]]; then
+  info "Creating Python venv…"
+  python3 -m venv $VENV
+fi
+info "Installing Python dependencies…"
+$VENV/bin/pip install --quiet --upgrade pip
+$VENV/bin/pip install --quiet -r $NEXUS_HOME/nexus/requirements.txt
+chown -R $SERVICE_USER:$SERVICE_USER $VENV
+ok "Python venv ready"
+
+# ── 6. Build React frontend ───────────────────────────────────────────────────
+if [[ -d $FRONTEND ]]; then
+  info "Building React dashboard…"
+  cat > "$FRONTEND/.env.local" <<EOF
+VITE_API_URL=http://localhost:8000
+EOF
+  cd $FRONTEND
+  npm ci --silent
+  npm run build --silent
+  chown -R $SERVICE_USER:$SERVICE_USER "$FRONTEND/dist"
+  ok "React dashboard built → $FRONTEND/dist"
+else
+  warn "Frontend directory not found at $FRONTEND — skipping build"
+fi
+
+# ── 7. Environment file ───────────────────────────────────────────────────────
+ENV_FILE=$NEXUS_HOME/.env
+if [[ ! -f $ENV_FILE ]]; then
+  info "Creating .env template…"
+  cat > "$ENV_FILE" <<'EOF'
+# NEXUS AI — Environment Configuration
+# Copy this file and fill in your secrets.
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+SECRET_KEY=CHANGE_ME_use_openssl_rand_hex_32
+NEXUS_PIN=                        # leave empty to set on first login
+
+# ── AI Providers ──────────────────────────────────────────────────────────────
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GEMINI_API_KEY=
+
+# ── Trading ───────────────────────────────────────────────────────────────────
+XTB_ACCOUNT_ID=
+XTB_PASSWORD=
+XTB_MODE=demo                      # demo | real
+
+IBKR_HOST=127.0.0.1
+IBKR_PORT=7497
+IBKR_CLIENT_ID=1
+
+# ── Services ──────────────────────────────────────────────────────────────────
+SERP_API_KEY=                       # for TruthChecker web search
+
+# ── Paths (do not change unless you know what you're doing) ───────────────────
 LOG_DIR=/var/log/nexus
-LOG_LEVEL=INFO
-HOST=0.0.0.0
-PORT=8000
-TTS_ENABLED=false
-STT_ENABLED=false
-TRADING_BROKER=simulation
-ENVEOF
-  chown nexus:nexus "$ENV_FILE"; chmod 600 "$ENV_FILE"
-  warn ".env criado — edita $ENV_FILE com as tuas chaves."
+DATA_DIR=/data/nexus
+NEXUS_API_URL=http://localhost:8000
+DASHBOARD_PORT=9000
+EOF
+  chown $SERVICE_USER:$SERVICE_USER "$ENV_FILE"
+  chmod 640 "$ENV_FILE"
+  ok ".env template created at $ENV_FILE"
 else
-  # Garantir que LOG_DIR é absoluto no .env existente
-  if grep -q '^LOG_DIR=logs$' "$ENV_FILE" 2>/dev/null; then
-    sed -i 's|^LOG_DIR=logs$|LOG_DIR=/var/log/nexus|' "$ENV_FILE"
-    warn ".env: LOG_DIR corrigido para /var/log/nexus"
+  # Ensure LOG_DIR is absolute in existing .env
+  if grep -q 'LOG_DIR=logs' "$ENV_FILE" 2>/dev/null; then
+    sed -i 's|LOG_DIR=logs|LOG_DIR=/var/log/nexus|g' "$ENV_FILE"
+    warn "Fixed relative LOG_DIR in $ENV_FILE → /var/log/nexus"
   fi
-  info ".env já existe — não modificado (excepto LOG_DIR)."
+  ok ".env already exists — not overwritten"
 fi
 
-# ---------------------------------------------------------------------------
-step "Serviços systemd"
-# Regra: sem StandardOutput=append para ficheiros — o journald captura stdout.
-# O logger Python escreve para /var/log/nexus/ por conta própria com permissões correctas.
-# LOG_DIR e LOG_LEVEL injectados explicitamente para não depender só do .env.
-
-cat > /etc/systemd/system/nexus-api.service <<'SVCEOF'
+# ── 8. Systemd services ───────────────────────────────────────────────────────
+write_service() {
+  local name=$1 desc=$2 exec_start=$3 after=${4:-network.target}
+  cat > "/etc/systemd/system/${name}.service" <<EOF
 [Unit]
-Description=NEXUS API Service
-After=network-online.target
-Wants=network-online.target
+Description=$desc
+After=$after
+Wants=$after
 
 [Service]
 Type=simple
-User=nexus
-Group=nexus
-WorkingDirectory=/opt/nexus
-EnvironmentFile=/opt/nexus/.env
-Environment=PYTHONPATH=/opt/nexus
-Environment=LOG_DIR=/var/log/nexus
+User=$SERVICE_USER
+Group=$SERVICE_USER
+WorkingDirectory=$NEXUS_HOME
+EnvironmentFile=$ENV_FILE
+Environment=PYTHONPATH=$NEXUS_HOME
+Environment=LOG_DIR=$LOG_DIR
 Environment=LOG_LEVEL=INFO
 UMask=0002
-ExecStart=/opt/nexus/venv/bin/uvicorn nexus.api.rest.main:app --host 0.0.0.0 --port 8000
-Restart=on-failure
-RestartSec=10
-StartLimitIntervalSec=120
-StartLimitBurst=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=nexus-api
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-
-cat > /etc/systemd/system/nexus-core.service <<'SVCEOF'
-[Unit]
-Description=NEXUS Core Service
-After=network-online.target nexus-api.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=nexus
-Group=nexus
-WorkingDirectory=/opt/nexus
-EnvironmentFile=/opt/nexus/.env
-Environment=PYTHONPATH=/opt/nexus
-Environment=LOG_DIR=/var/log/nexus
-Environment=LOG_LEVEL=INFO
-UMask=0002
-ExecStart=/opt/nexus/venv/bin/python -m nexus.main
-Restart=on-failure
-RestartSec=10
-StartLimitIntervalSec=120
-StartLimitBurst=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=nexus-core
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-
-cat > /etc/systemd/system/nexus-dashboard.service <<'SVCEOF'
-[Unit]
-Description=NEXUS Dashboard Service
-After=network-online.target nexus-api.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=nexus
-Group=nexus
-WorkingDirectory=/opt/nexus
-EnvironmentFile=/opt/nexus/.env
-Environment=PYTHONPATH=/opt/nexus
-Environment=LOG_DIR=/var/log/nexus
-Environment=LOG_LEVEL=INFO
-Environment=DASHBOARD_PORT=9000
-UMask=0002
-ExecStart=/opt/nexus/venv/bin/python -m nexus.dashboard.server
-Restart=on-failure
+ExecStart=$exec_start
+Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=nexus-dashboard
+SyslogIdentifier=$name
 
 [Install]
 WantedBy=multi-user.target
-SVCEOF
+EOF
+  ok "Service $name written"
+}
+
+write_service \
+  "nexus-api" \
+  "NEXUS AI — REST API (port 8000)" \
+  "$VENV/bin/uvicorn nexus.api.rest.main:app --host 0.0.0.0 --port 8000 --workers 1"
+
+write_service \
+  "nexus-core" \
+  "NEXUS AI — Orchestrator Core" \
+  "$VENV/bin/python -m nexus.main"
+
+write_service \
+  "nexus-dashboard" \
+  "NEXUS AI — Dashboard (port 9000)" \
+  "$VENV/bin/uvicorn nexus.dashboard.server:app --host 0.0.0.0 --port 9000 --workers 1" \
+  "network.target nexus-api.service"
 
 systemctl daemon-reload
-systemctl enable nexus-api nexus-core nexus-dashboard 2>/dev/null || warn "systemctl enable falhou"
-log "Serviços systemd configurados."
 
-if [[ $NO_SERVICES -eq 0 ]]; then
-  for svc in nexus-api nexus-core nexus-dashboard; do
-    log "A iniciar $svc..."
-    systemctl restart "$svc" 2>/dev/null || warn "$svc restart falhou"
-    sleep 4
-    systemctl is-active --quiet "$svc" \
-      && log "$svc ACTIVO." \
-      || warn "$svc inactivo — ver: journalctl -u $svc -n 50 --no-pager"
-  done
-else
-  info "[--no-services] Serviços não iniciados automaticamente."
+for svc in nexus-api nexus-core nexus-dashboard; do
+  systemctl enable "$svc"
+done
+ok "Systemd services enabled"
+
+# ── 9. Start / restart services ───────────────────────────────────────────────
+info "Starting NEXUS services…"
+for svc in nexus-api nexus-core nexus-dashboard; do
+  systemctl restart "$svc" && ok "$svc started" || warn "$svc failed to start — check: journalctl -u $svc -n 50"
+done
+
+# ── 10. Firewall (optional) ───────────────────────────────────────────────────
+if command -v ufw &>/dev/null; then
+  ufw allow 9000/tcp comment 'NEXUS Dashboard' 2>/dev/null || true
+  ok "ufw: port 9000 open"
 fi
 
-# ---------------------------------------------------------------------------
-step "Relatório Final"
-echo -e "\n${BOLD}Instalados (${#PKGS_OK[@]}):${NC}"
-[[ ${#PKGS_OK[@]} -gt 0 ]] \
-  && for p in "${PKGS_OK[@]}"; do echo -e "  ${GREEN}✔${NC} $p"; done \
-  || echo "  (nenhum)"
-echo -e "\n${BOLD}Falharam (${#PKGS_FAIL[@]}):${NC}"
-if [[ ${#PKGS_FAIL[@]} -gt 0 ]]; then
-  for p in "${PKGS_FAIL[@]}"; do echo -e "  ${RED}✘${NC} $p"; done
-  warn "Pacotes em falta podem limitar funcionalidade de voz/áudio. Core não é afectado."
-else
-  echo -e "  ${GREEN}(nenhuma falha)${NC}"
-fi
-echo ""
-log "Instalação concluída!"
-echo -e "\n${BOLD}Próximos passos:${NC}"
-echo -e "  1. Edita  ${CYAN}/opt/nexus/.env${NC}"
-echo -e "  2. Reinicia: ${CYAN}sudo systemctl restart nexus-api nexus-core nexus-dashboard${NC}"
-echo -e "  3. API:       ${CYAN}curl http://localhost:8000/health${NC}"
-echo -e "  4. Dashboard: ${CYAN}curl http://localhost:9000/health${NC}"
-echo -e "  5. Logs:      ${CYAN}journalctl -u nexus-core -f${NC}"
-echo ""
+# ── Done ─────────────────────────────────────────────────────────────────────
+SERVER_IP=$(hostname -I | awk '{print $1}')
+echo -e "\n${GREEN}══════════════════════════════════════════════${NC}"
+echo -e "${GREEN}   NEXUS AI instalado com sucesso!${NC}"
+echo -e "${GREEN}══════════════════════════════════════════════${NC}"
+echo -e "  Dashboard : ${BLUE}http://$SERVER_IP:9000${NC}"
+echo -e "  API       : ${BLUE}http://$SERVER_IP:8000/docs${NC}"
+echo -e "  Logs      : journalctl -u nexus-api -f"
+echo -e "  Config    : $ENV_FILE\n"
+echo -e "${YELLOW}IMPORTANTE:${NC} Edita $ENV_FILE e adiciona as tuas chaves API."
+echo -e "Depois: sudo systemctl restart nexus-api nexus-core nexus-dashboard\n"
