@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  core:
+    build:
+      context: ../..
+      dockerfile: nexus/docker/Dockerfile.core
+    container_name: nexus-core
+    restart: unless-stopped
+    env_file: ../../.env
+    volumes:
+      - nexus_data:/data/nexus
+    networks:
+      - nexus_net
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ../..
+      dockerfile: nexus/docker/Dockerfile.api
+    container_name: nexus-api
+    restart: unless-stopped
+    env_file: ../../.env
+    ports:
+      - "8000:8000"
+    networks:
+      - nexus_net
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: nexus/docker/Dockerfile.dashboard
+    container_name: nexus-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - nexus_net
+    depends_on:
+      - api
+
+volumes:
+  nexus_data:
+
+networks:
+  nexus_net:
+    driver: bridge

@@ -1,0 +1,21 @@
+# NEXUS Voice Configuration
+tts:
+  engine: "pyttsx3"   # pyttsx3 | elevenlabs | azure
+  rate: 175
+  volume: 1.0
+  voice_id: "pt+f3"   # pyttsx3 Portuguese female
+  elevenlabs:
+    api_key: "${ELEVENLABS_API_KEY}"
+    voice_id: "${ELEVENLABS_VOICE_ID:-21m00Tcm4TlvDq8ikWAM}"
+  azure:
+    api_key: "${AZURE_TTS_KEY}"
+    region: "westeurope"
+    voice_name: "pt-PT-RaquelNeural"
+
+stt:
+  engine: "whisper"   # whisper | google
+  wake_word: "nexus"
+  model_size: "base"
+  language: "pt"
+  silence_threshold: 500
+  silence_duration_ms: 1500

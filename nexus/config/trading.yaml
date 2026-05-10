@@ -1,0 +1,31 @@
+# NEXUS Trading Configuration
+trading:
+  mode: "simulation"  # simulation | real
+  broker: "xtb"       # xtb | ibkr
+
+  risk:
+    max_order_eur: 10.0
+    max_exposure_eur: 100.0
+    min_order_interval_sec: 60
+    max_daily_loss_eur: 50.0
+
+  xtb:
+    account_id: "${XTB_ACCOUNT_ID}"
+    password: "${XTB_PASSWORD}"
+    server: "${XTB_SERVER:-xAPIDemo}"
+
+  ibkr:
+    host: "${IBKR_HOST:-localhost}"
+    port: 5000
+    client_id: 1
+    account: "${IBKR_ACCOUNT}"
+
+  strategies:
+    - name: "momentum"
+      enabled: true
+      symbols: ["EURUSD", "BTCUSD"]
+      timeframe: "H1"
+    - name: "mean_reversion"
+      enabled: false
+      symbols: ["GOLD"]
+      timeframe: "H4"

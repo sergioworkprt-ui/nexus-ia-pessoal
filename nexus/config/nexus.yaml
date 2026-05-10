@@ -1,0 +1,35 @@
+# NEXUS Core Configuration
+nexus:
+  name: "NEXUS"
+  persona: "JARVIS"
+  version: "1.0.0"
+  language: "pt-PT"
+  debug: false
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  secret_key: "${NEXUS_SECRET_KEY}"
+  token_expire_minutes: 60
+
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+  api_key: "${OPENAI_API_KEY}"
+  base_url: "${LLM_BASE_URL:-https://api.openai.com/v1}"
+  max_tokens: 1024
+  temperature: 0.7
+
+memory:
+  max_entries: 1000
+  persist_path: "/data/nexus/memory.json"
+
+watchdog:
+  check_interval: 30
+  modules:
+    - trading
+    - ml
+    - scheduler
+
+scheduler:
+  timezone: "Europe/Lisbon"
