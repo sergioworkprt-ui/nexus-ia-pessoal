@@ -1,93 +1,114 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import type { AvatarState, Tab } from './types'
+import Sidebar from './components/Sidebar'
 import Avatar from './components/Avatar'
 import Chat from './components/Chat'
-import TradingPanel from './components/TradingPanel'
+import Tasks from './components/Tasks'
+import Memory from './components/Memory'
+import Settings from './components/Settings'
+import Security from './components/Security'
+import Finance from './components/Finance'
+import Learning from './components/Learning'
+import Monitor from './components/Monitor'
+import VideoAnalysis from './components/VideoAnalysis'
+import Logs from './components/Logs'
+import Evolution from './components/Evolution'
+import { wsUrl } from './api'
 
-interface SystemStatus {
-  name: string
-  version: string
-  modules: Record<string, string>
-  trading_mode: string
-}
+const PANELS: Record<Tab, React.ReactNode> = {} as Record<Tab, React.ReactNode>
 
 export default function App() {
-  const [status, setStatus] = useState<SystemStatus | null>(null)
-  const [avatarState, setAvatarState] = useState<'idle' | 'thinking' | 'speaking'>('idle')
+  const [tab, setTab] = useState<Tab>('chat')
+  const [avatarState, setAvatarState] = useState<AvatarState>('idle')
+  const [connected, setConnected] = useState(false)
+  const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
-    const fetchStatus = async () => {
+    let ws: WebSocket
+    let retry: ReturnType<typeof setTimeout>
+
+    function connect() {
       try {
-        const r = await fetch('/api/status')
-        const data = await r.json()
-        setStatus(data)
-      } catch {}
+        ws = new WebSocket(wsUrl())
+        wsRef.current = ws
+        ws.onopen = () => setConnected(true)
+        ws.onclose = () => {
+          setConnected(false)
+          retry = setTimeout(connect, 4000)
+        }
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data)
+            if (msg.avatar_state) setAvatarState(msg.avatar_state as AvatarState)
+          } catch { /* ignore */ }
+        }
+      } catch { /* ignore */ }
     }
-    fetchStatus()
-    const id = setInterval(fetchStatus, 10_000)
-    return () => clearInterval(id)
+    connect()
+    return () => {
+      clearTimeout(retry)
+      ws?.close()
+    }
   }, [])
 
-  useEffect(() => {
-    const ws = new WebSocket(`ws://${location.host}/ws`)
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data)
-      if (msg.avatar_state) setAvatarState(msg.avatar_state)
-    }
-    return () => ws.close()
-  }, [])
+  const panels: Record<Tab, React.ReactNode> = {
+    chat:      <Chat onAvatarState={setAvatarState} ws={wsRef.current} />,
+    tasks:     <Tasks />,
+    memory:    <Memory />,
+    settings:  <Settings />,
+    security:  <Security />,
+    finance:   <Finance />,
+    learning:  <Learning />,
+    monitor:   <Monitor />,
+    video:     <VideoAnalysis />,
+    logs:      <Logs />,
+    evolution: <Evolution />,
+    about:     <About />,
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-nexus-bg">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-nexus-border">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-nexus-accent animate-pulse" />
-          <span className="text-xl font-bold tracking-widest uppercase text-nexus-accent">
-            NEXUS
-          </span>
-          {status && (
-            <span className="text-xs text-gray-500 ml-2">v{status.version}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          {status && (
-            <span className={`text-xs px-2 py-1 rounded ${
-              status.trading_mode === 'real'
-                ? 'bg-nexus-danger/20 text-nexus-danger'
-                : 'bg-nexus-success/20 text-nexus-success'
-            }`}>
-              {status.trading_mode.toUpperCase()}
+    <div className="flex h-screen bg-nexus-bg text-white overflow-hidden">
+      <Sidebar active={tab} onChange={setTab} connected={connected} />
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <header className="flex items-center justify-between px-5 py-3 border-b border-nexus-border shrink-0">
+          <div className="flex items-center gap-3">
+            <Avatar state={avatarState} size="sm" />
+            <span className="font-bold tracking-widest text-nexus-accent uppercase">NEXUS</span>
+            <span className="text-xs text-gray-500">v2.0</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${connected ? 'bg-nexus-success/20 text-nexus-success' : 'bg-nexus-danger/20 text-nexus-danger'}`}>
+              {connected ? 'WS online' : 'WS offline'}
             </span>
-          )}
-          <span className="text-xs text-nexus-success">ONLINE</span>
-        </div>
-      </header>
+          </div>
+        </header>
+        <main className="flex-1 overflow-hidden">
+          {panels[tab]}
+        </main>
+      </div>
+    </div>
+  )
+}
 
-      <main className="flex flex-1 gap-4 p-4 overflow-hidden">
-        <div className="flex flex-col gap-4 w-64 shrink-0">
-          <Avatar state={avatarState} />
-          {status && (
-            <div className="bg-nexus-panel border border-nexus-border rounded-lg p-4">
-              <p className="text-xs text-gray-400 uppercase mb-2">Módulos</p>
-              {Object.entries(status.modules).map(([k, v]) => (
-                <div key={k} className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-300">{k}</span>
-                  <span className={v === 'running' ? 'text-nexus-success' : 'text-nexus-danger'}>
-                    {v}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex-1 flex flex-col min-w-0">
-          <Chat onStateChange={setAvatarState} />
-        </div>
-
-        <div className="w-80 shrink-0">
-          <TradingPanel />
-        </div>
-      </main>
+function About() {
+  return (
+    <div className="p-8 max-w-lg">
+      <h2 className="text-nexus-accent text-lg font-bold mb-4">NEXUS v2.0</h2>
+      <ul className="space-y-2 text-sm text-gray-300">
+        {[
+          'Chat com IA (texto + voz)',
+          'Multi-AI learning (OpenAI, Claude, Gemini)',
+          'Análise de vídeos YouTube',
+          'Verificação de verdade',
+          'Trading XTB + IBKR',
+          'Evolução controlada do código',
+          'Sistema de tarefas com aprovação',
+          'Segurança PIN + JWT',
+          'Monitor de sistema',
+          'Logs em tempo real',
+          'PWA installável',
+        ].map(f => <li key={f} className="flex gap-2"><span className="text-nexus-success">✓</span>{f}</li>)}
+      </ul>
     </div>
   )
 }
