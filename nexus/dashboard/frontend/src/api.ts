@@ -1,4 +1,6 @@
-const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+const BASE = (
+  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
+).replace(/\/$/, '')
 
 function token() { return localStorage.getItem('nexus_token') ?? '' }
 
@@ -61,19 +63,19 @@ export const api = {
     return req(`/evolution?${p}`)
   },
   evolutionApprove: (pid: string) => post(`/evolution/${pid}/approve`, {}),
-  evolutionReject: (pid: string) => post(`/evolution/${pid}/reject`, {}),
-  evolutionApply: (pid: string) => post(`/evolution/${pid}/apply`, {}),
+  evolutionReject:  (pid: string) => post(`/evolution/${pid}/reject`, {}),
+  evolutionApply:   (pid: string) => post(`/evolution/${pid}/apply`, {}),
 
   truthCheck: (claim: string) => post('/truth/check', { claim }),
 
-  xtbStatus: () => req('/trading/xtb/status'),
+  xtbStatus:    () => req('/trading/xtb/status'),
   xtbPositions: () => req('/trading/xtb/positions'),
-  xtbBalance: () => req('/trading/xtb/balance'),
+  xtbBalance:   () => req('/trading/xtb/balance'),
   xtbOrder: (o: Record<string, unknown>) => post('/trading/xtb/order', o),
 
-  ibkrStatus: () => req('/trading/ibkr/status'),
+  ibkrStatus:    () => req('/trading/ibkr/status'),
   ibkrPositions: () => req('/trading/ibkr/positions'),
-  ibkrAccount: () => req('/trading/ibkr/account'),
+  ibkrAccount:   () => req('/trading/ibkr/account'),
   ibkrOrder: (o: Record<string, unknown>) => post('/trading/ibkr/order', o),
 
   enableReal: (code: string) => post('/trade/real/enable', { code }),
@@ -90,4 +92,11 @@ export const api = {
   saveSettings: (s: Record<string, unknown>) => put('/settings', s),
 }
 
-export const wsUrl = () => `${BASE.replace(/^http/, 'ws')}/ws`
+/**
+ * URL do WebSocket:
+ * - Usa VITE_WS_URL se definido (ex: ws://35.241.151.115:8001)
+ * - Caso contrário, deriva do VITE_API_URL substituindo http→ws e adicionando /ws
+ */
+export const wsUrl = (): string =>
+  (import.meta.env.VITE_WS_URL as string | undefined) ??
+  `${BASE.replace(/^http/, 'ws')}/ws`
