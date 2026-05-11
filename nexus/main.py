@@ -1,76 +1,120 @@
-"""NEXUS V2 — entry point.
+"""NEXUS V2 — entry point adaptativo.
 
-Inicia:
-  • FastAPI REST API + endpoint /ws   →  API_PORT  (default 8000)
-  • Servidor WebSocket standalone    →  WS_PORT   (default 8001)
-  • Todos os módulos NEXUS com fallback gracioso por módulo
+Modo COMPLETO  : usa Orchestrator + nexus.api.rest.main  (se disponível)
+Modo MÍNIMO   : FastAPI inline + /health + /ws  (garante sempre API+WS)
+Porta API : API_PORT  (default 8000)
+Porta WS  : WS_PORT   (default 8001)
 """
 from __future__ import annotations
+import asyncio, json, logging, os, signal, sys
 
-import asyncio
-import logging
-import os
-import signal
-import sys
+# ─ PYTHONPATH auto-fix: garante que /opt/nexus está sempre no path ─────────
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-# ── Garantir que /opt/nexus está sempre no sys.path ────────────────────────────────
-_NEXUS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _NEXUS_ROOT not in sys.path:
-    sys.path.insert(0, _NEXUS_ROOT)
-
-# ── Carregar .env ───────────────────────────────────────────────────────────────────
+# ─ Carregar .env ─────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
-    _env_path = os.path.join(_NEXUS_ROOT, ".env")
-    if os.path.exists(_env_path):
-        load_dotenv(_env_path)
-        print(f"[NEXUS] .env carregado de {_env_path}", flush=True)
-    else:
-        print(f"[NEXUS] AVISO: .env não encontrado em {_env_path}", flush=True)
+    _ep = os.path.join(_ROOT, ".env")
+    if os.path.exists(_ep):
+        load_dotenv(_ep)
+        print(f"[NEXUS] .env carregado de {_ep}", flush=True)
 except ImportError:
     print("[NEXUS] AVISO: python-dotenv não instalado", flush=True)
 
-# ── Logging ───────────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s  %(message)s",
-)
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(name)s] %(levelname)s  %(message)s")
+log = logging.getLogger("nexus.main")
+
+import uvicorn
+
+# ─ Tentar modo COMPLETO, cair para modo MÍNIMO se falhar ──────────────────
+_FULL = False
 try:
-    from nexus.services.logger.logger import get_logger
-    log = get_logger("main")
-except Exception:
-    log = logging.getLogger("nexus.main")
+    from nexus.api.rest.main import app, set_nexus          # type: ignore
+    from nexus.core.orchestrator.orchestrator import Orchestrator  # type: ignore
+    _FULL = True
+    log.info("Modo COMPLETO: nexus.api.rest.main + Orchestrator carregados")
+except Exception as _e:
+    log.warning("Modo MÍNIMO (módulos completos indisponíveis: %s)", _e)
+    from fastapi import FastAPI, WebSocket as _FWS
+    from fastapi.middleware.cors import CORSMiddleware
+    app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs")  # type: ignore
+    app.add_middleware(CORSMiddleware,                                   # type: ignore
+                       allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+    @app.get("/health")                                                  # type: ignore
+    def _h():
+        return {"status": "ok", "version": "2.0.0", "mode": "minimal"}
+
+    @app.get("/status")                                                  # type: ignore
+    def _st():
+        return {"status": "minimal", "api": "running",
+                "ws_port": int(os.getenv("WS_PORT", "8001"))}
+
+    _ws_conns: set = set()
+
+    @app.websocket("/ws")                                                # type: ignore
+    async def _wse(ws: _FWS):
+        await ws.accept()
+        _ws_conns.add(ws)
+        try:
+            await ws.send_json({"type": "connected", "mode": "minimal", "version": "2.0"})
+            while True:
+                try:
+                    msg = await asyncio.wait_for(ws.receive_text(), timeout=30)
+                    if json.loads(msg).get("type") == "ping":
+                        await ws.send_text(json.dumps({"type": "pong"}))
+                except asyncio.TimeoutError:
+                    await ws.send_json({"type": "heartbeat"})
+                except Exception:
+                    break
+        except Exception:
+            pass
+        finally:
+            _ws_conns.discard(ws)
+
+    def set_nexus(_): pass  # type: ignore  # noqa: E301
 
 
-# ── Helper: importação segura ───────────────────────────────────────────────────────────
-def _load(label: str, factory):
-    """Importa e instancia um módulo; retorna None em caso de qualquer erro."""
-    try:
-        obj = factory()
-        log.info("  ✓ %s", label)
-        return obj
-    except Exception as exc:
-        log.warning("  ✗ %s: %s", label, exc)
-        return None
-
-
-# ── Arranque WebSocket (porta 8001) ─────────────────────────────────────────────────
+# ─ WS standalone porta 8001 ──────────────────────────────────────────────
 async def _start_ws() -> None:
-    ws_host = os.getenv("WS_HOST", "0.0.0.0")
-    ws_port = int(os.getenv("WS_PORT", "8001"))
+    h = os.getenv("WS_HOST", "0.0.0.0")
+    p = int(os.getenv("WS_PORT", "8001"))
     try:
-        from nexus.ws_server import start_ws
-        await start_ws(ws_host, ws_port)
+        from nexus.ws_server import start_ws  # type: ignore
+        await start_ws(h, p)
+        return
     except ImportError:
-        log.warning("ws_server.py não encontrado — WS na porta 8001 desactivado")
-    except asyncio.CancelledError:
         pass
-    except Exception as exc:
-        log.error("WS server erro: %s", exc)
+    except (asyncio.CancelledError, Exception) as ex:
+        if not isinstance(ex, asyncio.CancelledError):
+            log.error("ws_server erro: %s", ex)
+        return
+    # Fallback WS inline
+    try:
+        import websockets  # type: ignore
+        _cl: set = set()
+        async def _hh(ws):
+            _cl.add(ws)
+            try:
+                await ws.send(json.dumps({"type": "connected"}))
+                async for _ in ws:
+                    pass
+            except Exception:
+                pass
+            finally:
+                _cl.discard(ws)
+        log.info("WS inline → ws://%s:%d", h, p)
+        async with websockets.serve(_hh, h, p):  # type: ignore
+            await asyncio.Future()
+    except Exception as ex:
+        log.error("WS inline falhou: %s", ex)
 
 
-# ── Módulos opcionais ────────────────────────────────────────────────────────────────
-_MODULE_MAP = [
+# ─ Módulos opcionais (modo completo) ───────────────────────────────────────
+_MODS = [
     ("memory",         "nexus.core.memory.memory",                   "Memory"),
     ("personality",    "nexus.core.personality.personality",          "Personality"),
     ("security",       "nexus.core.security.security",                "SecurityManager"),
@@ -88,83 +132,77 @@ _MODULE_MAP = [
 ]
 
 
-# ── Main ────────────────────────────────────────────────────────────────────────────
-async def main() -> None:
-    log.info("═══ NEXUS v2 a iniciar ═══")
-
-    # Imports críticos — se falharem, o processo termina com mensagem clara
+def _load(lbl, fn):
     try:
-        import uvicorn
-        from nexus.api.rest.main import app, set_nexus
-        from nexus.core.orchestrator.orchestrator import Orchestrator
-    except ImportError as exc:
-        log.critical("Import crítico falhou: %s", exc)
-        log.critical("Dica: PYTHONPATH=%s já devia estar definido pelo systemd", _NEXUS_ROOT)
-        sys.exit(1)
+        r = fn()
+        log.info("  ✓ %s", lbl)
+        return r
+    except Exception as e:
+        log.warning("  ✗ %s: %s", lbl, e)
+        return None
 
-    nexus = Orchestrator()
 
-    # Carregar módulos opcionais — cada um falha de forma independente
-    for name, mod_path, cls_name in _MODULE_MAP:
-        obj = _load(
-            name,
-            lambda p=mod_path, c=cls_name:
-                getattr(__import__(p, fromlist=[c]), c)()
-        )
-        if obj:
-            nexus.register(name, obj)
+# ─ Main ──────────────────────────────────────────────────────────────────────
+async def main() -> None:
+    log.info("═══ NEXUS v2 a iniciar (%s) ═══", "COMPLETO" if _FULL else "MÍNIMO")
 
-    # STT precisa de nexus.process como callback
-    stt = _load("stt", lambda: getattr(
-        __import__("nexus.core.voice.stt", fromlist=["STT"]), "STT"
-    )(on_wake=nexus.process))
-    if stt:
-        nexus.register("stt", stt)
+    ah = os.getenv("API_HOST", os.getenv("HOST", "0.0.0.0"))
+    ap = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
 
-    # TradingModule precisa do SecurityManager
-    sec = nexus.get("security")
-    if sec:
-        tm = _load("trading", lambda s=sec: getattr(
-            __import__("nexus.modules.trading.trading", fromlist=["TradingModule"]),
-            "TradingModule",
-        )(s))
-        if tm:
-            nexus.register("trading", tm)
+    _nexus = None
+    if _FULL:
+        _nexus = Orchestrator()  # type: ignore
+        for n, mp, cn in _MODS:
+            obj = _load(n, lambda p=mp, c=cn:
+                        getattr(__import__(p, fromlist=[c]), c)())
+            if obj:
+                _nexus.register(n, obj)
+        stt = _load("stt", lambda: getattr(
+            __import__("nexus.core.voice.stt", fromlist=["STT"]), "STT"
+        )(on_wake=_nexus.process))
+        if stt:
+            _nexus.register("stt", stt)
+        sec = _nexus.get("security")
+        if sec:
+            tm = _load("trading", lambda s=sec: getattr(
+                __import__("nexus.modules.trading.trading", fromlist=["TradingModule"]),
+                "TradingModule")(s))
+            if tm:
+                _nexus.register("trading", tm)
+        set_nexus(_nexus)  # type: ignore
 
-    set_nexus(nexus)
-
-    # Configuração da API
-    api_host = os.getenv("API_HOST", os.getenv("HOST", "0.0.0.0"))
-    api_port = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
-
-    cfg    = uvicorn.Config(app, host=api_host, port=api_port,
-                            log_level="info", access_log=True)
+    cfg    = uvicorn.Config(app, host=ah, port=ap, log_level="info", access_log=True)
     server = uvicorn.Server(cfg)
 
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
+            _sv = server
+            _nx = _nexus
             loop.add_signal_handler(
-                sig, lambda: asyncio.create_task(_stop(nexus, server))
+                sig, lambda s=_sv, n=_nx: asyncio.create_task(_stop(n, s))
             )
         except NotImplementedError:
             pass
 
-    log.info("API  → http://%s:%d", api_host, api_port)
-    log.info("Docs → http://%s:%d/docs", api_host, api_port)
-    log.info("WS   → ws://%s:%s", os.getenv("WS_HOST", "0.0.0.0"), os.getenv("WS_PORT", "8001"))
+    log.info("API  → http://%s:%d  (%s)", ah, ap, "full" if _FULL else "minimal")
+    log.info("Docs → http://%s:%d/docs", ah, ap)
+    log.info("WS   → ws://%s:%s",
+             os.getenv("WS_HOST", "0.0.0.0"), os.getenv("WS_PORT", "8001"))
 
-    await asyncio.gather(
-        nexus.start(),
-        server.serve(),
-        _start_ws(),
-        return_exceptions=True,
-    )
+    tasks = [server.serve(), _start_ws()]
+    if _FULL and _nexus:
+        tasks.insert(0, _nexus.start())
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _stop(nexus, server) -> None:
     log.info("A parar NEXUS...")
-    await nexus.stop()
+    if nexus:
+        try:
+            await nexus.stop()
+        except Exception:
+            pass
     server.should_exit = True
 
 

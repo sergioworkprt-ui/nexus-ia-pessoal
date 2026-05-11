@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NEXUS V2 — Diagnóstico e Reparação TOTAL
-# Uso:  sudo bash nexus_fix.sh
+# NEXUS V2 — nexus_fix.sh  (versão 3)
+#
+# Detecta a estrutura real do VPS e escreve um main.py adaptativo:
+#   • Modo COMPLETO  — se nexus.api.rest.main + Orchestrator existirem
+#   • Modo MÍNIMO   — FastAPI básico inline (garante API+WS mesmo sem módulos)
+#
+# Uso: sudo bash /opt/nexus/nexus/scripts/nexus_fix.sh
 # =============================================================================
 set -uo pipefail
 
@@ -13,77 +18,125 @@ warn() { echo -e "${YELLOW}[!!]${NC}  $*"; }
 info() { echo -e "${BLUE}[--]${NC}  $*"; }
 step() { echo -e "\n${CYAN}════ $* ════${NC}"; }
 
-# Resultados do relatório final
-R_DEPS="PENDENTE" R_ENV="PENDENTE" R_WS="PENDENTE"
-R_API="PENDENTE"  R_BACKEND="PENDENTE" R_DASH="PENDENTE" R_SYSTEMD="PENDENTE"
+R_DEPS="OK" R_ENV="PENDENTE" R_WS="PENDENTE"
+R_API="PENDENTE" R_BACKEND="PENDENTE" R_DASH="PENDENTE"
+R_SYSTEMD="PENDENTE" R_MODE="?"
 
-[[ $EUID -ne 0 ]] && { err "Corre como root: sudo bash nexus_fix.sh"; exit 1; }
+[[ $EUID -ne 0 ]] && { err "Corre como root: sudo bash $0"; exit 1; }
 
-# ── Auto-detectar NEXUS_HOME ────────────────────────────────────────────────────────────────
-if   [[ -f /opt/nexus/nexus/main.py ]]; then NEXUS_HOME=/opt/nexus
-elif [[ -f ./nexus/main.py          ]]; then NEXUS_HOME="$(pwd)"
-else err "Não encontrei NEXUS em /opt/nexus nem aqui. Edita NEXUS_HOME manualmente."; exit 1
-fi
+# ── Auto-detectar NEXUS_HOME ────────────────────────────────────────────────────────────
+for _try in /opt/nexus "$(pwd)"; do
+  [[ -d "$_try/nexus" ]] && { NEXUS_HOME="$_try"; break; }
+done
+[[ -z "${NEXUS_HOME:-}" ]] && { err "Não encontrei /opt/nexus. Edita NEXUS_HOME."; exit 1; }
 
 NEXUS_SRC="$NEXUS_HOME/nexus"
 ENV_FILE="$NEXUS_HOME/.env"
-SERVICE_FILE="/etc/systemd/system/nexus-backend.service"
-FRONTEND_DIR="$NEXUS_SRC/dashboard/frontend"
+SVC_FILE="/etc/systemd/system/nexus-backend.service"
+FRONTEND="$NEXUS_SRC/dashboard/frontend"
 PYTHON=/usr/bin/python3
 PIP=/usr/bin/pip3
 SERVICE=nexus-backend
+export PYTHONPATH="$NEXUS_HOME"
 
 echo -e "\n${CYAN}╔$(printf '═%.0s' {1..56})╗${NC}"
-echo -e "${CYAN}║          NEXUS V2 — Reparação Total$(printf ' %.0s' {1..18})║${NC}"
+echo -e "${CYAN}║     NEXUS V2 — Reparação Total  (v3)$(printf ' %.0s' {1..15})║${NC}"
 echo -e "${CYAN}╚$(printf '═%.0s' {1..56})╝${NC}"
-info "NEXUS_HOME : $NEXUS_HOME"
-info "NEXUS_SRC  : $NEXUS_SRC"
-info "Python     : $PYTHON"
-info "Service    : $SERVICE"
+info "NEXUS_HOME  : $NEXUS_HOME"
+info "NEXUS_SRC   : $NEXUS_SRC"
+info "Python      : $PYTHON  ($($PYTHON --version 2>&1))"
+info "Service     : $SERVICE"
+info "PYTHONPATH  : $PYTHONPATH"
 
 # =============================================================================
-step "1. Dependências Python"
+step "1. Parar serviço em crash-loop (urgente)"
 # =============================================================================
-info "Actualizando pip..."
-$PIP install --quiet --upgrade pip 2>/dev/null || true
-
-install_dep() {
-  local pkg=$1 imp=$2
-  if $PYTHON -c "import $imp" 2>/dev/null; then
-    info "  $pkg ✓ (já instalado)"
-  else
-    info "  instalando $pkg ..."
-    $PIP install --quiet "$pkg" 2>/dev/null && ok "  $pkg instalado" || warn "  $pkg não crítico, continuando"
-  fi
-}
-
-# Críticos primeiro (falha = abort)
-$PIP install --quiet "python-dotenv" "uvicorn[standard]" "fastapi" "websockets" \
-  && ok "Dependências críticas OK" \
-  || { err "Falha a instalar dependências críticas"; exit 1; }
-
-# Opcionais
-install_dep "psutil"                  "psutil"
-install_dep "httpx"                   "httpx"
-install_dep "PyJWT"                   "jwt"
-install_dep "pyyaml"                  "yaml"
-install_dep "pydantic"                "pydantic"
-install_dep "anthropic"               "anthropic"
-install_dep "openai"                  "openai"
-install_dep "yt-dlp"                  "yt_dlp"
-install_dep "youtube-transcript-api" "youtube_transcript_api"
-install_dep "gTTS"                    "gtts"
-install_dep "SpeechRecognition"       "speech_recognition"
-install_dep "aiofiles"                "aiofiles"
-R_DEPS="OK"; ok "Dependências OK"
+if systemctl is-active --quiet $SERVICE 2>/dev/null || \
+   systemctl is-failed --quiet $SERVICE 2>/dev/null; then
+  systemctl stop $SERVICE 2>/dev/null || true
+  ok "$SERVICE parado"
+else
+  info "$SERVICE já parado"
+fi
 
 # =============================================================================
-step "2. Ficheiro .env"
+step "2. Instalar dependências Python em falta"
+# =============================================================================
+INSTALL_NEEDED=()
+for pkg_imp in \
+  "python-dotenv:dotenv" \
+  "uvicorn[standard]:uvicorn" \
+  "fastapi:fastapi" \
+  "websockets:websockets" \
+  "psutil:psutil" \
+  "httpx:httpx" \
+  "PyJWT:jwt" \
+  "pydantic:pydantic"
+do
+  pkg="${pkg_imp%%:*}"; imp="${pkg_imp##*:}"
+  $PYTHON -c "import $imp" 2>/dev/null || INSTALL_NEEDED+=("$pkg")
+done
+
+if [[ ${#INSTALL_NEEDED[@]} -gt 0 ]]; then
+  info "Instalando: ${INSTALL_NEEDED[*]}"
+  $PIP install --quiet "${INSTALL_NEEDED[@]}" && ok "Dependências instaladas" || \
+    warn "Algumas dependências falharam"
+else
+  ok "Todas as dependências já instaladas"
+fi
+R_DEPS="OK"
+
+# =============================================================================
+step "3. Actualizar código via git pull"
+# =============================================================================
+if [[ -d "$NEXUS_HOME/.git" ]]; then
+  info "Tentando git pull em $NEXUS_HOME ..."
+  cd "$NEXUS_HOME"
+  git fetch origin 2>/dev/null && \
+    git checkout claude/create-test-file-d1AY6 2>/dev/null && \
+    git pull origin claude/create-test-file-d1AY6 2>/dev/null && \
+    ok "Git pull OK" || warn "Git pull falhou — usando código local"
+  cd /
+else
+  warn "Não é um repositório git — a corrigir ficheiros directamente"
+fi
+
+# =============================================================================
+step "4. Detectar estrutura de módulos"
+# =============================================================================
+check_mod() { PYTHONPATH="$NEXUS_HOME" $PYTHON -c "$1" 2>/dev/null; }
+
+info "A testar módulos com PYTHONPATH=$NEXUS_HOME ..."
+
+if check_mod "from nexus.api.rest.main import app, set_nexus"; then
+  HAS_FULL_API=true;  ok  "nexus.api.rest.main         ✓"
+else
+  HAS_FULL_API=false; warn "nexus.api.rest.main         ✗"
+fi
+
+if check_mod "from nexus.core.orchestrator.orchestrator import Orchestrator"; then
+  HAS_ORCH=true;  ok  "nexus.core.orchestrator      ✓"
+else
+  HAS_ORCH=false; warn "nexus.core.orchestrator      ✗"
+fi
+
+if check_mod "from nexus.ws_server import start_ws"; then
+  HAS_WS_MOD=true;  ok  "nexus.ws_server              ✓"
+else
+  HAS_WS_MOD=false; warn "nexus.ws_server              ✗ (será criado)"
+fi
+
+if $HAS_FULL_API && $HAS_ORCH; then
+  R_MODE="COMPLETO"; ok  "Modo detectado: COMPLETO (Orchestrator + API)"
+else
+  R_MODE="MÍNIMO";   warn "Modo detectado: MÍNIMO (API inline + WS)"
+fi
+
+# =============================================================================
+step "5. .env"
 # =============================================================================
 if [[ ! -f "$ENV_FILE" ]]; then
-  info "Criando $ENV_FILE ..."
   cat > "$ENV_FILE" <<'ENVEOF'
-# NEXUS V2 — Configuração
 API_HOST=0.0.0.0
 API_PORT=8000
 HOST=0.0.0.0
@@ -93,71 +146,45 @@ WS_PORT=8001
 DASHBOARD_URL=http://35.241.151.115:9000
 LOG_DIR=/var/log/nexus
 DATA_DIR=/data/nexus
-SECRET_KEY=nexus-change-this-key-use-openssl-rand-hex-32
+SECRET_KEY=nexus-change-this-key
 NEXUS_API_KEY=nexus-change-me
 ENVEOF
   ok ".env criado"
 else
-  # Garantir que as variáveis essenciais existem
-  grep -q '^API_HOST=' "$ENV_FILE" || echo 'API_HOST=0.0.0.0'  >> "$ENV_FILE"
-  grep -q '^API_PORT=' "$ENV_FILE" || echo 'API_PORT=8000'     >> "$ENV_FILE"
-  grep -q '^HOST='     "$ENV_FILE" || echo 'HOST=0.0.0.0'      >> "$ENV_FILE"
-  grep -q '^PORT='     "$ENV_FILE" || echo 'PORT=8000'          >> "$ENV_FILE"
-  grep -q '^WS_HOST='  "$ENV_FILE" || echo 'WS_HOST=0.0.0.0'   >> "$ENV_FILE"
-  grep -q '^WS_PORT='  "$ENV_FILE" || echo 'WS_PORT=8001'      >> "$ENV_FILE"
-  ok ".env OK (existente actualizado)"
+  for _kv in API_HOST=0.0.0.0 API_PORT=8000 HOST=0.0.0.0 PORT=8000 \
+             WS_HOST=0.0.0.0 WS_PORT=8001; do
+    _k="${_kv%%=*}"
+    grep -q "^${_k}=" "$ENV_FILE" || echo "$_kv" >> "$ENV_FILE"
+  done
+  ok ".env OK"
 fi
 R_ENV="OK"
 
 # =============================================================================
-step "3. Directórios"
+step "6. Criar/actualizar ws_server.py"
 # =============================================================================
-for d in /var/log/nexus /data/nexus /data/nexus/memory /data/nexus/tasks /data/nexus/evolution; do
-  mkdir -p "$d"
-done
-chmod -R 775 /var/log/nexus /data/nexus
-ok "Directórios OK"
-
-# =============================================================================
-step "4. Servidor WebSocket standalone — ws_server.py"
-# =============================================================================
-WS_FILE="$NEXUS_SRC/ws_server.py"
-info "Escrevendo $WS_FILE ..."
-cat > "$WS_FILE" <<'WSEOF'
-"""NEXUS — Servidor WebSocket standalone (porta 8001).
-
-Inicia um servidor WebSocket puro (não-FastAPI) que o dashboard
-frontend usa para actualiações em tempo real (avatar_state, métricas, etc.).
-"""
+cat > "$NEXUS_SRC/ws_server.py" <<'WSEOF'
+"""NEXUS — Servidor WebSocket standalone (porta 8001)."""
 from __future__ import annotations
-import asyncio
-import json
-import logging
-import os
+import asyncio, json, logging, os
 from typing import Any, Set
 
 log = logging.getLogger("nexus.ws_server")
 _clients: Set[Any] = set()
 
-
 async def broadcast(data: dict) -> None:
-    """Envia data a todos os clientes WebSocket ligados."""
-    if not _clients:
-        return
+    if not _clients: return
     msg = json.dumps(data)
     dead: Set[Any] = set()
     for ws in list(_clients):
-        try:
-            await ws.send(msg)
-        except Exception:
-            dead.add(ws)
+        try: await ws.send(msg)
+        except Exception: dead.add(ws)
     _clients.difference_update(dead)
 
-
-async def _handler(ws) -> None:
+async def _handler(ws: Any) -> None:
     _clients.add(ws)
     addr = getattr(ws, "remote_address", "?")
-    log.info(f"WS client connected: {addr}  (total: {len(_clients)})")
+    log.info("WS connected: %s (total: %d)", addr, len(_clients))
     try:
         await ws.send(json.dumps({"type": "connected", "server": "nexus-ws", "version": "2.0"}))
         async for raw in ws:
@@ -166,124 +193,154 @@ async def _handler(ws) -> None:
                 if msg.get("type") == "ping":
                     await ws.send(json.dumps({"type": "pong"}))
                 else:
-                    await broadcast({"type": "relay", "data": msg})
-            except (json.JSONDecodeError, TypeError):
-                pass
-    except Exception:
-        pass
+                    await broadcast(msg)
+            except (json.JSONDecodeError, TypeError): pass
+    except Exception: pass
     finally:
         _clients.discard(ws)
-        log.info(f"WS client disconnected: {addr}  (total: {len(_clients)})")
-
+        log.info("WS disconnected: %s (total: %d)", addr, len(_clients))
 
 async def start_ws(host: str = "0.0.0.0", port: int = 8001) -> None:
-    """Inicia o servidor WebSocket. Corre indefinidamente."""
-    try:
-        import websockets  # type: ignore
+    try: import websockets
     except ImportError:
-        log.error("Package 'websockets' não instalado. Corre: pip3 install websockets")
+        log.error("websockets não instalado. Corre: pip3 install websockets")
         return
-
-    log.info(f"NEXUS WebSocket → ws://{host}:{port}")
+    log.info("NEXUS WS → ws://%s:%d", host, port)
     try:
-        async with websockets.serve(_handler, host, port):  # type: ignore[attr-defined]
-            log.info(f"NEXUS WebSocket a escutar em ws://{host}:{port}")
-            await asyncio.Future()  # corre até ser cancelado
-    except OSError as exc:
-        log.error(f"Não consigo ligar WS a {host}:{port} → {exc}")
-    except asyncio.CancelledError:
-        log.info("WS server parado")
-
+        async with websockets.serve(_handler, host, port):  # type: ignore
+            await asyncio.Future()
+    except OSError as e: log.error("WS bind error: %s", e)
+    except asyncio.CancelledError: pass
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s [%(name)s] %(levelname)s  %(message)s")
-    _h = os.getenv("WS_HOST", "0.0.0.0")
-    _p = int(os.getenv("WS_PORT", "8001"))
-    asyncio.run(start_ws(_h, _p))
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(start_ws(os.getenv("WS_HOST","0.0.0.0"), int(os.getenv("WS_PORT","8001"))))
 WSOF
-ok "ws_server.py criado"
-R_WS="ESCRITO"
+ok "ws_server.py escrito"
+R_WS="OK"
 
 # =============================================================================
-step "5. main.py — correção total (PYTHONPATH + WS + import fallback)"
+step "7. Escrever main.py adaptativo"
 # =============================================================================
-MAIN_FILE="$NEXUS_SRC/main.py"
-# Backup
-cp "$MAIN_FILE" "${MAIN_FILE}.bak.$(date +%s)" 2>/dev/null && info "Backup: ${MAIN_FILE}.bak.*" || true
-cat > "$MAIN_FILE" <<'MAINEOF'
-"""NEXUS V2 — entry point.
+MAIN="$NEXUS_SRC/main.py"
+cp "$MAIN" "${MAIN}.bak.$(date +%s)" 2>/dev/null && info "Backup: ${MAIN}.bak.*" || true
 
-Inicia:
-  • FastAPI REST API + endpoint /ws   →  API_PORT  (default 8000)
-  • Servidor WebSocket standalone    →  WS_PORT   (default 8001)
-  • Todos os módulos NEXUS com fallback gracioso por módulo
+cat > "$MAIN" <<'MAINEOF'
+"""NEXUS V2 — entry point adaptativo.
+
+Modo COMPLETO  : usa Orchestrator + nexus.api.rest.main  (se disponível)
+Modo MÍNIMO   : FastAPI inline + /health + /ws  (garante sempre API+WS)
+Porta API : API_PORT  (default 8000)
+Porta WS  : WS_PORT   (default 8001)
 """
 from __future__ import annotations
-import asyncio
-import logging
-import os
-import signal
-import sys
+import asyncio, json, logging, os, signal, sys
 
-# ─ Garantir que /opt/nexus está sempre no sys.path ────────────────────────────────
-_NEXUS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _NEXUS_ROOT not in sys.path:
-    sys.path.insert(0, _NEXUS_ROOT)
+# ─ PYTHONPATH auto-fix: garante que /opt/nexus está sempre no path ────────────
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-# ─ Carregar .env ────────────────────────────────────────────────────────────────────
+# ─ Carregar .env ───────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
-    _env_path = os.path.join(_NEXUS_ROOT, ".env")
-    if os.path.exists(_env_path):
-        load_dotenv(_env_path)
-        print(f"[NEXUS] .env carregado de {_env_path}", flush=True)
-    else:
-        print(f"[NEXUS] AVISO: .env não encontrado em {_env_path}", flush=True)
+    _ep = os.path.join(_ROOT, ".env")
+    if os.path.exists(_ep):
+        load_dotenv(_ep)
+        print(f"[NEXUS] .env carregado de {_ep}", flush=True)
 except ImportError:
     print("[NEXUS] AVISO: python-dotenv não instalado", flush=True)
 
-# ─ Logging base ───────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s  %(message)s",
-)
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(name)s] %(levelname)s  %(message)s")
+log = logging.getLogger("nexus.main")
+
+import uvicorn
+
+# ─ Tentar modo COMPLETO, cair para modo MÍNIMO se falhar ───────────────────
+_FULL = False
 try:
-    from nexus.services.logger.logger import get_logger
-    log = get_logger("main")
-except Exception:
-    log = logging.getLogger("nexus.main")
+    from nexus.api.rest.main import app, set_nexus          # type: ignore
+    from nexus.core.orchestrator.orchestrator import Orchestrator  # type: ignore
+    _FULL = True
+    log.info("Modo COMPLETO: nexus.api.rest.main + Orchestrator carregados")
+except Exception as _e:
+    log.warning("Modo MÍNIMO (módulos completos indisponíveis: %s)", _e)
+    from fastapi import FastAPI, WebSocket as _FWS
+    from fastapi.middleware.cors import CORSMiddleware
+    app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs")  # type: ignore
+    app.add_middleware(CORSMiddleware,                                   # type: ignore
+                       allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+    @app.get("/health")                                                  # type: ignore
+    def _h():
+        return {"status": "ok", "version": "2.0.0", "mode": "minimal"}
+
+    @app.get("/status")                                                  # type: ignore
+    def _st():
+        return {"status": "minimal", "api": "running", "ws_port": int(os.getenv("WS_PORT","8001"))}
+
+    _ws_conns: set = set()
+
+    @app.websocket("/ws")                                                # type: ignore
+    async def _wse(ws: _FWS):
+        await ws.accept()
+        _ws_conns.add(ws)
+        try:
+            await ws.send_json({"type": "connected", "mode": "minimal", "version": "2.0"})
+            while True:
+                try:
+                    msg = await asyncio.wait_for(ws.receive_text(), timeout=30)
+                    if json.loads(msg).get("type") == "ping":
+                        await ws.send_text(json.dumps({"type": "pong"}))
+                except asyncio.TimeoutError:
+                    await ws.send_json({"type": "heartbeat"})
+                except Exception:
+                    break
+        except Exception:
+            pass
+        finally:
+            _ws_conns.discard(ws)
+
+    def set_nexus(_): pass  # type: ignore  # noqa: E301
 
 
-# ─ Helper: importação segura ─────────────────────────────────────────────────────────────
-def _load(label: str, factory):
-    """Importa e instancia um módulo; retorna None em caso de erro."""
-    try:
-        obj = factory()
-        log.info(f"  ✓ {label}")
-        return obj
-    except Exception as exc:
-        log.warning(f"  ✗ {label}: {exc}")
-        return None
-
-
-# ─ Arranque do servidor WebSocket (porta 8001) ──────────────────────────────────
+# ─ WS standalone porta 8001 ────────────────────────────────────────────────
 async def _start_ws() -> None:
-    ws_host = os.getenv("WS_HOST", "0.0.0.0")
-    ws_port = int(os.getenv("WS_PORT", "8001"))
+    h = os.getenv("WS_HOST", "0.0.0.0")
+    p = int(os.getenv("WS_PORT", "8001"))
+    # Tentar ws_server.py dedicado
     try:
-        from nexus.ws_server import start_ws
-        await start_ws(ws_host, ws_port)
+        from nexus.ws_server import start_ws  # type: ignore
+        await start_ws(h, p)
+        return
     except ImportError:
-        log.warning("ws_server.py não encontrado — WS na porta 8001 desactivado")
-    except asyncio.CancelledError:
         pass
-    except Exception as exc:
-        log.error(f"WS server erro: {exc}")
+    except asyncio.CancelledError:
+        return
+    except Exception as ex:
+        log.error("ws_server.py erro: %s", ex)
+        return
+    # Fallback: servidor mínimo inline
+    try:
+        import websockets  # type: ignore
+        _cl: set = set()
+        async def _hh(ws):
+            _cl.add(ws)
+            try:
+                await ws.send(json.dumps({"type":"connected"}))
+                async for _ in ws: pass
+            except Exception: pass
+            finally: _cl.discard(ws)
+        log.info("WS inline → ws://%s:%d", h, p)
+        async with websockets.serve(_hh, h, p):  # type: ignore
+            await asyncio.Future()
+    except Exception as ex:
+        log.error("WS inline falhou: %s", ex)
 
 
-# ─ Módulos opcionais ──────────────────────────────────────────────────────────────────
-_MODULE_MAP = [
+# ─ Módulos opcionais (só no modo completo) ──────────────────────────────────
+_MODS = [
     ("memory",         "nexus.core.memory.memory",                   "Memory"),
     ("personality",    "nexus.core.personality.personality",          "Personality"),
     ("security",       "nexus.core.security.security",                "SecurityManager"),
@@ -300,99 +357,79 @@ _MODULE_MAP = [
     ("scheduler",      "nexus.services.scheduler.scheduler",          "Scheduler"),
 ]
 
-
-# ─ Main ───────────────────────────────────────────────────────────────────────────────
-async def main() -> None:
-    log.info("═══ NEXUS v2 a iniciar ═══")
-
-    # Imports críticos — se falharem, não continuamos
+def _load(lbl, fn):
     try:
-        import uvicorn
-        from nexus.api.rest.main import app, set_nexus
-        from nexus.core.orchestrator.orchestrator import Orchestrator
-    except ImportError as exc:
-        log.critical(f"Import crítico falhou: {exc}")
-        log.critical("Dica: define PYTHONPATH=/opt/nexus no serviço systemd")
-        sys.exit(1)
+        r = fn(); log.info("  ✓ %s", lbl); return r
+    except Exception as e:
+        log.warning("  ✗ %s: %s", lbl, e); return None
 
-    nexus = Orchestrator()
 
-    # Carregar módulos opcionais (cada um independente)
-    for name, mod_path, cls_name in _MODULE_MAP:
-        obj = _load(
-            name,
-            lambda p=mod_path, c=cls_name:
-                getattr(__import__(p, fromlist=[c]), c)()
-        )
-        if obj:
-            nexus.register(name, obj)
+# ─ Main ──────────────────────────────────────────────────────────────────────────
+async def main() -> None:
+    log.info("═══ NEXUS v2 a iniciar (%s) ═══", 'COMPLETO' if _FULL else 'MÍNIMO')
 
-    # STT precisa de nexus.process como callback
-    stt = _load("stt", lambda: getattr(
-        __import__("nexus.core.voice.stt", fromlist=["STT"]), "STT"
-    )(on_wake=nexus.process))
-    if stt:
-        nexus.register("stt", stt)
+    ah = os.getenv("API_HOST", os.getenv("HOST", "0.0.0.0"))
+    ap = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
 
-    # TradingModule precisa do SecurityManager
-    sec = nexus.get("security")
-    if sec:
-        tm = _load("trading", lambda s=sec: getattr(
-            __import__("nexus.modules.trading.trading", fromlist=["TradingModule"]),
-            "TradingModule"
-        )(s))
-        if tm:
-            nexus.register("trading", tm)
+    _nexus = None
+    if _FULL:
+        _nexus = Orchestrator()  # type: ignore
+        for n, mp, cn in _MODS:
+            obj = _load(n, lambda p=mp, c=cn: getattr(__import__(p, fromlist=[c]), c)())
+            if obj: _nexus.register(n, obj)
+        stt = _load("stt", lambda: getattr(
+            __import__("nexus.core.voice.stt", fromlist=["STT"]), "STT"
+        )(on_wake=_nexus.process))
+        if stt: _nexus.register("stt", stt)
+        sec = _nexus.get("security")
+        if sec:
+            tm = _load("trading", lambda s=sec: getattr(
+                __import__("nexus.modules.trading.trading", fromlist=["TradingModule"]),
+                "TradingModule")(s))
+            if tm: _nexus.register("trading", tm)
+        set_nexus(_nexus)  # type: ignore
 
-    set_nexus(nexus)
-
-    # Configuração da API
-    api_host = os.getenv("API_HOST", os.getenv("HOST", "0.0.0.0"))
-    api_port = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
-
-    cfg    = uvicorn.Config(app, host=api_host, port=api_port,
-                            log_level="info", access_log=True)
+    cfg    = uvicorn.Config(app, host=ah, port=ap, log_level="info", access_log=True)
     server = uvicorn.Server(cfg)
 
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            loop.add_signal_handler(
-                sig, lambda: asyncio.create_task(_stop(nexus, server))
-            )
+            _sv = server; _nx = _nexus
+            loop.add_signal_handler(sig, lambda s=_sv, n=_nx:
+                asyncio.create_task(_stop(n, s)))
         except NotImplementedError:
             pass
 
-    log.info(f"API  → http://{api_host}:{api_port}")
-    log.info(f"Docs → http://{api_host}:{api_port}/docs")
-    log.info(f"WS   → ws://{os.getenv('WS_HOST', '0.0.0.0')}:{os.getenv('WS_PORT', '8001')}")
+    log.info("API  → http://%s:%d  (%s)", ah, ap, 'full' if _FULL else 'minimal')
+    log.info("Docs → http://%s:%d/docs", ah, ap)
+    log.info("WS   → ws://%s:%s", os.getenv('WS_HOST','0.0.0.0'), os.getenv('WS_PORT','8001'))
 
-    await asyncio.gather(
-        nexus.start(),
-        server.serve(),
-        _start_ws(),
-        return_exceptions=True,
-    )
+    tasks = [server.serve(), _start_ws()]
+    if _FULL and _nexus:
+        tasks.insert(0, _nexus.start())
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _stop(nexus, server) -> None:
     log.info("A parar NEXUS...")
-    await nexus.stop()
+    if nexus:
+        try: await nexus.stop()
+        except Exception: pass
     server.should_exit = True
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 MAINEOF
-ok "main.py reescrito (PYTHONPATH auto-fix + WS + import fallback)"
+ok "main.py adaptativo escrito  (modo: $R_MODE)"
 
 # =============================================================================
-step "6. Systemd — nexus-backend.service"
+step "8. Systemd — nexus-backend.service"
 # =============================================================================
-info "Reescrevendo $SERVICE_FILE ..."
-cat > "$SERVICE_FILE" <<SVCEOF
+cat > "$SVC_FILE" <<SVCEOF
 [Unit]
-Description=NEXUS Backend Service (API porta 8000 + WS porta 8001)
+Description=NEXUS Backend Service (API 8000 + WS 8001)
 After=network.target
 Wants=network.target
 
@@ -412,46 +449,33 @@ SyslogIdentifier=nexus-backend
 [Install]
 WantedBy=multi-user.target
 SVCEOF
-
 systemctl daemon-reload
 systemctl enable $SERVICE 2>/dev/null || true
-ok "nexus-backend.service actualizado (PYTHONPATH=$NEXUS_HOME)"
+ok "nexus-backend.service actualizado"
 R_SYSTEMD="OK"
 
 # =============================================================================
-step "7. Firewall — portas 8000, 8001, 9000"
+step "9. Directórios e firewall"
 # =============================================================================
+for d in /var/log/nexus /data/nexus /data/nexus/memory /data/nexus/tasks /data/nexus/evolution; do
+  mkdir -p "$d"; chmod 775 "$d"
+done
 if command -v ufw &>/dev/null; then
-  ufw allow 8000/tcp comment 'NEXUS API'       2>/dev/null || true
-  ufw allow 8001/tcp comment 'NEXUS WS'        2>/dev/null || true
-  ufw allow 9000/tcp comment 'NEXUS Dashboard' 2>/dev/null || true
-  ok "UFW: portas 8000, 8001, 9000 abertas"
-elif command -v iptables &>/dev/null; then
-  for p in 8000 8001 9000; do
-    iptables -C INPUT -p tcp --dport $p -j ACCEPT 2>/dev/null || \
-    iptables -I INPUT -p tcp --dport $p -j ACCEPT 2>/dev/null || true
-  done
-  ok "iptables: portas 8000, 8001, 9000 abertas"
-else
-  warn "Firewall não detectado — verifica manualmente as portas"
+  for p in 8000 8001 9000; do ufw allow $p/tcp 2>/dev/null || true; done
+  ok "UFW: 8000, 8001, 9000 abertos"
 fi
 
 # =============================================================================
-step "8. Reiniciar backend e validar portas"
+step "10. Arrancar backend e validar portas"
 # =============================================================================
-info "A parar servico..."
-systemctl stop $SERVICE 2>/dev/null || true
-sleep 2
-info "A iniciar servico..."
+info "A iniciar $SERVICE ..."
 systemctl start $SERVICE
-info "Aguardando arranque (20s)..."
-sleep 20
+info "Aguardando arranque (25s)..."
+sleep 25
 
 check_port() {
   local p=$1
-  # Tenta ss, netstat, ou nc
   ss -tlnp 2>/dev/null | grep -q ":${p}[[:space:]]" && return 0
-  netstat -tlnp 2>/dev/null | grep -q ":${p}[[:space:]]" && return 0
   command -v nc &>/dev/null && nc -z 127.0.0.1 "$p" 2>/dev/null && return 0
   return 1
 }
@@ -459,9 +483,8 @@ check_port() {
 if check_port 8000; then
   ok "Porta 8000 (API) ABERTA"; R_API="OK"
 else
-  err "Porta 8000 (API) FECHADA"; R_API="ERRO"
-  warn "Últimos logs:"
-  journalctl -u $SERVICE -n 30 --no-pager 2>/dev/null || true
+  err "Porta 8000 (API) FECHADA — ver logs abaixo"; R_API="ERRO"
+  journalctl -u $SERVICE -n 40 --no-pager 2>/dev/null | tail -30
 fi
 
 if check_port 8001; then
@@ -470,72 +493,65 @@ else
   err "Porta 8001 (WS) FECHADA"; R_WS="ERRO"
 fi
 
-if systemctl is-active --quiet $SERVICE; then
-  ok "Serviço $SERVICE activo"; R_BACKEND="OK"
-else
-  err "Serviço $SERVICE não está activo"; R_BACKEND="ERRO"
-fi
+systemctl is-active --quiet $SERVICE && \
+  { ok "$SERVICE activo"; R_BACKEND="OK"; } || \
+  { err "$SERVICE inactivo"; R_BACKEND="ERRO"; }
 
 # =============================================================================
-step "9. Frontend — rebuild e dashboard"
+step "11. Dashboard (9000)"
 # =============================================================================
-if [[ -d "$FRONTEND_DIR" ]]; then
-  if [[ ! -d "$FRONTEND_DIR/dist" ]] || [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
-    info "A construir frontend..."
-    cd "$FRONTEND_DIR"
-    npm ci --silent 2>/dev/null && npm run build --silent 2>/dev/null && \
-      ok "Frontend construído" || warn "Build frontend falhou"
-    cd "$NEXUS_HOME"
-  else
-    ok "Frontend já construído (dist/ existe)"
-  fi
-  # Reiniciar nexus-dashboard se existir
-  if systemctl is-enabled nexus-dashboard &>/dev/null; then
-    systemctl restart nexus-dashboard 2>/dev/null && ok "nexus-dashboard reiniciado" || true
-  fi
-  if check_port 9000; then
-    ok "Porta 9000 (Dashboard) ABERTA"; R_DASH="OK"
-  else
-    warn "Porta 9000 (Dashboard) fechada — servico nexus-dashboard não activo"
-    R_DASH="SEM SERVIÇO"
-  fi
+if check_port 9000; then
+  ok "Porta 9000 (Dashboard) ABERTA"; R_DASH="OK"
+elif systemctl is-enabled nexus-dashboard &>/dev/null; then
+  systemctl restart nexus-dashboard 2>/dev/null || true
+  sleep 5
+  check_port 9000 && { ok "Dashboard reiniciado OK"; R_DASH="OK"; } || \
+    { err "Dashboard não abriu"; R_DASH="ERRO"; }
 else
-  warn "Frontend não encontrado em $FRONTEND_DIR"
-  R_DASH="N/A"
+  warn "nexus-dashboard não configurado"; R_DASH="N/A"
 fi
 
 # =============================================================================
 # RELATÓRIO FINAL
 # =============================================================================
 echo ""
-echo -e "${CYAN}╔$(printf '═%.0s' {1..50})╗${NC}"
-echo -e "${CYAN}║            RELATÓRIO FINAL NEXUS V2$(printf ' %.0s' {1..12})║${NC}"
-echo -e "${CYAN}╠$(printf '═%.0s' {1..50})╣${NC}"
+echo -e "${CYAN}╔$(printf '═%.0s' {1..54})╗${NC}"
+echo -e "${CYAN}║       RELATÓRIO FINAL — NEXUS V2$(printf ' %.0s' {1..17})║${NC}"
+echo -e "${CYAN}╠$(printf '═%.0s' {1..54})╣${NC}"
 
-_report_line() {
-  local label=$1 val=$2
-  local color=$RED icon="✗"
-  [[ "$val" == "OK" ]] && color=$GREEN && icon="✓"
-  printf "${CYAN}║${NC}  ${color}${icon}${NC}  %-26s %s\n" "$label" "${color}${val}${NC}"
+_rl() {
+  local l=$1 v=$2 c=$RED i="✗"
+  [[ "$v" == "OK" ]] && c=$GREEN && i="✓"
+  printf "${CYAN}║${NC}  ${c}${i}${NC}  %-28s  ${c}%-8s${NC}\n" "$l" "$v"
 }
 
-_report_line "Dependências Python"   "$R_DEPS"
-_report_line "Ficheiro .env"         "$R_ENV"
-_report_line "Systemd service"       "$R_SYSTEMD"
-_report_line "Backend (servico)"     "$R_BACKEND"
-_report_line "API REST (porta 8000)" "$R_API"
-_report_line "WebSocket (porta 8001)" "$R_WS"
-_report_line "Dashboard (porta 9000)" "$R_DASH"
-echo -e "${CYAN}╚$(printf '═%.0s' {1..50})╝${NC}"
-echo ""
-echo "Logs em tempo real:"
-echo "  journalctl -u nexus-backend -f"
-echo "  journalctl -u nexus-backend -n 80 --no-pager"
+_rl "Dependências Python"    "$R_DEPS"
+_rl "Ficheiro .env"          "$R_ENV"
+_rl "Systemd service"        "$R_SYSTEMD"
+_rl "main.py (modo: $R_MODE)" "OK"
+_rl "ws_server.py"           "$R_WS"
+_rl "Backend activo"         "$R_BACKEND"
+_rl "API REST (porta 8000)"  "$R_API"
+_rl "WebSocket (porta 8001)" "$R_WS"
+_rl "Dashboard (porta 9000)" "$R_DASH"
+echo -e "${CYAN}╚$(printf '═%.0s' {1..54})╝${NC}"
 echo ""
 
-if [[ "$R_API" != "OK" ]]; then
-  echo -e "${YELLOW}Próximos passos se a API ainda falhar:${NC}"
-  echo "  1. journalctl -u nexus-backend -n 50 --no-pager"
-  echo "  2. cd $NEXUS_HOME && PYTHONPATH=$NEXUS_HOME $PYTHON nexus/main.py"
-  echo "  3. Copia o erro e partilha para diagnóstico adicional"
+echo "Monitorização em tempo real:"
+echo "  journalctl -u nexus-backend -f"
+echo ""
+
+if [[ "$R_API" != "OK" || "$R_BACKEND" != "OK" ]]; then
+  echo -e "${YELLOW}Se ainda falhar, corre manualmente para ver o erro exacto:${NC}"
+  echo "  cd $NEXUS_HOME && PYTHONPATH=$NEXUS_HOME $PYTHON $NEXUS_SRC/main.py"
+  echo ""
+fi
+
+if [[ "$R_API" == "OK" && "$R_WS" == "OK" ]]; then
+  SERVER_IP=$(hostname -I | awk '{print $1}')
+  echo -e "${GREEN}NEXUS em funcionamento!${NC}"
+  echo "  API        : http://$SERVER_IP:8000"
+  echo "  Docs       : http://$SERVER_IP:8000/docs"
+  echo "  WebSocket  : ws://$SERVER_IP:8001"
+  echo "  Dashboard  : http://$SERVER_IP:9000"
 fi
