@@ -3,17 +3,17 @@
 Modo COMPLETO  : usa Orchestrator + nexus.api.rest.main  (se disponível)
 Modo MÍNIMO   : FastAPI inline + /health + /ws  (garante sempre API+WS)
 Porta API : API_PORT  (default 8000)
-Porta WS  : WS_PORT   (default 8001)
+Porta WS  : WS_PORT   (default 8001)  — thread dedicada, loop próprio
 """
 from __future__ import annotations
-import asyncio, json, logging, os, signal, sys
+import asyncio, json, logging, os, signal, sys, threading
 
-# ─ PYTHONPATH auto-fix: garante que /opt/nexus está sempre no path ─────────
+# ─ PYTHONPATH auto-fix ───────────────────────────────────────────────────────
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-# ─ Carregar .env ─────────────────────────────────────────────────────────
+# ─ .env ──────────────────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
     _ep = os.path.join(_ROOT, ".env")
@@ -29,7 +29,7 @@ log = logging.getLogger("nexus.main")
 
 import uvicorn
 
-# ─ Tentar modo COMPLETO, cair para modo MÍNIMO se falhar ──────────────────
+# ─ Modo COMPLETO / MÍNIMO ────────────────────────────────────────────────────
 _FULL = False
 try:
     from nexus.api.rest.main import app, set_nexus          # type: ignore
@@ -45,7 +45,7 @@ except Exception as _e:
                        allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
     @app.get("/health")                                                  # type: ignore
-    def _h():
+    def _hth():
         return {"status": "ok", "version": "2.0.0", "mode": "minimal"}
 
     @app.get("/status")                                                  # type: ignore
@@ -78,70 +78,97 @@ except Exception as _e:
     def set_nexus(_): pass  # type: ignore  # noqa: E301
 
 
-# ─ WS standalone porta 8001 ──────────────────────────────────────────────
-async def _start_ws() -> None:
+# ─ WebSocket server — thread dedicada com event loop próprio ─────────────────
+#
+# Razão: asyncio.gather com uvicorn pode cancelar ou nunca schedular tasks
+# concorrentes em certas versões do uvicorn/Python 3.11. Usar uma thread
+# dedicada com asyncio.new_event_loop() garante que o WS server arranca
+# e corre independentemente do que uvicorn faz ao event loop principal.
+
+def _ws_server_thread(h: str, p: int) -> None:
+    """Corre num thread daemon — event loop completamente isolado do uvicorn."""
+    print(f"[NEXUS WS] thread iniciada — host={h} port={p} python={sys.executable}",
+          flush=True)
+    log.info("[WS] thread iniciada — host=%s port=%d python=%s", h, p, sys.executable)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def _run() -> None:
+        # Tentativa 1: ws_server.py dedicado
+        try:
+            from nexus.ws_server import start_ws  # type: ignore
+            log.info("[WS] nexus.ws_server importado — a chamar start_ws()")
+            await start_ws(h, p)
+            return
+        except ImportError as ex:
+            log.warning("[WS] nexus.ws_server import falhou: %s — fallback inline", ex)
+        except asyncio.CancelledError:
+            log.info("[WS] start_ws() cancelado")
+            return
+        except Exception:
+            log.exception("[WS] nexus.ws_server.start_ws() falhou — fallback inline")
+
+        # Tentativa 2: websockets inline
+        log.info("[WS] fallback inline em ws://%s:%d", h, p)
+        try:
+            import websockets  # type: ignore
+            ws_ver = getattr(websockets, "__version__", "?")
+            log.info("[WS] websockets=%s", ws_ver)
+
+            async def _hh(ws: object) -> None:
+                try:
+                    await ws.send(json.dumps({"type": "connected"}))  # type: ignore
+                    async for _ in ws:  # type: ignore
+                        pass
+                except Exception:
+                    pass
+
+            async with websockets.serve(_hh, h, p):  # type: ignore
+                log.info("[WS] fallback inline ONLINE em ws://%s:%d", h, p)
+                print(f"[NEXUS WS] ONLINE ws://{h}:{p}", flush=True)
+                await asyncio.Future()
+
+        except ImportError as ex:
+            log.error(
+                "[WS] ERRO FATAL: websockets não instalado no venv activo.\n"
+                "  Python : %s\n  Erro   : %s\n"
+                "  Fix    : %s -m pip install 'websockets==10.4'",
+                sys.executable, ex, sys.executable,
+            )
+        except asyncio.CancelledError:
+            log.info("[WS] fallback inline cancelado")
+        except Exception:
+            log.exception("[WS] fallback inline falhou em %s:%d", h, p)
+
+    try:
+        loop.run_until_complete(_run())
+    except Exception:
+        log.exception("[WS] loop.run_until_complete falhou")
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
+    log.info("[WS] thread terminada")
+
+
+def _launch_ws_thread() -> None:
     h = os.getenv("WS_HOST", "0.0.0.0")
     p = int(os.getenv("WS_PORT", "8001"))
-
-    # Log imediato para garantir visibilidade no journal
-    log.info("[WS] _start_ws() → host=%s port=%d  python=%s", h, p, sys.executable)
-    print(f"[NEXUS WS] _start_ws() host={h} port={p} python={sys.executable}", flush=True)
-
-    # ── Tentativa 1: ws_server.py dedicado ───────────────────────────────
-    try:
-        from nexus.ws_server import start_ws  # type: ignore
-        log.info("[WS] nexus.ws_server importado — a chamar start_ws()")
-        await start_ws(h, p)
-        return  # só chega aqui se start_ws() terminar normalmente (cancelado)
-    except ImportError as ex:
-        log.warning("[WS] nexus.ws_server não disponível (%s) — a tentar fallback inline", ex)
-    except asyncio.CancelledError:
-        raise
-    except Exception as ex:
-        # Log com stacktrace COMPLETO para diagnóstico
-        log.exception("[WS] nexus.ws_server.start_ws() falhou — a tentar fallback inline")
-    # NOTA: não fazemos return aqui — continuamos para o fallback
-
-    # ── Tentativa 2: websockets inline ───────────────────────────────────
-    log.info("[WS] A iniciar fallback websockets inline em ws://%s:%d", h, p)
-    try:
-        import websockets  # type: ignore
-        ws_ver = getattr(websockets, "__version__", "?")
-        log.info("[WS] websockets inline — versão=%s", ws_ver)
-
-        _cl: set = set()
-
-        async def _hh(ws: object) -> None:
-            _cl.add(ws)
-            try:
-                await ws.send(json.dumps({"type": "connected", "mode": "inline"}))  # type: ignore
-                async for _ in ws:  # type: ignore
-                    pass
-            except Exception:
-                pass
-            finally:
-                _cl.discard(ws)
-
-        async with websockets.serve(_hh, h, p):  # type: ignore
-            log.info("[WS] Fallback inline ONLINE em ws://%s:%d", h, p)
-            print(f"[NEXUS WS] fallback inline ONLINE ws://{h}:{p}", flush=True)
-            await asyncio.Future()
-
-    except ImportError as ex:
-        log.error(
-            "[WS] ERRO FATAL: websockets não instalado no venv activo.\n"
-            "  Python: %s\n"
-            "  Erro:   %s\n"
-            "  Fix:    %s -m pip install 'websockets==10.4'",
-            sys.executable, ex, sys.executable,
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        log.exception("[WS] Fallback inline falhou em %s:%d", h, p)
+    print(f"[NEXUS WS] a lançar thread — host={h} port={p}", flush=True)
+    log.info("[WS] a lançar thread — host=%s port=%d", h, p)
+    t = threading.Thread(
+        target=_ws_server_thread,
+        args=(h, p),
+        name="nexus-ws-server",
+        daemon=True,  # morre quando o processo principal terminar
+    )
+    t.start()
+    log.info("[WS] thread lançada (id=%s name=%s daemon=%s)", t.ident, t.name, t.daemon)
 
 
-# ─ Módulos opcionais (modo completo) ───────────────────────────────────────
+# ─ Módulos opcionais (modo completo) ─────────────────────────────────────────
 _MODS = [
     ("memory",         "nexus.core.memory.memory",                   "Memory"),
     ("personality",    "nexus.core.personality.personality",          "Personality"),
@@ -174,6 +201,9 @@ def _load(lbl, fn):
 async def main() -> None:
     log.info("═══ NEXUS v2 a iniciar (%s) ═══", "COMPLETO" if _FULL else "MÍNIMO")
     log.info("Python: %s", sys.executable)
+
+    # Arrancar WS ANTES do event loop do uvicorn — thread dedicada
+    _launch_ws_thread()
 
     ah = os.getenv("API_HOST", os.getenv("HOST", "0.0.0.0"))
     ap = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
@@ -216,10 +246,10 @@ async def main() -> None:
 
     log.info("API  → http://%s:%d  (%s)", ah, ap, "full" if _FULL else "minimal")
     log.info("Docs → http://%s:%d/docs", ah, ap)
-    log.info("WS   → ws://%s:%s",
+    log.info("WS   → ws://%s:%s (thread dedicada)",
              os.getenv("WS_HOST", "0.0.0.0"), os.getenv("WS_PORT", "8001"))
 
-    tasks = [server.serve(), _start_ws()]
+    tasks: list = [server.serve()]
     if _FULL and _nexus:
         tasks.insert(0, _nexus.start())
     await asyncio.gather(*tasks, return_exceptions=True)
