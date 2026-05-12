@@ -62,25 +62,44 @@ async def _handler(ws: Any) -> None:
 
 
 async def start_ws(host: str = "0.0.0.0", port: int = 8001) -> None:
-    """Inicia o servidor WebSocket. Corre indefinidamente até ser cancelado."""
+    """Inicia o servidor WebSocket. Corre indefinidamente até ser cancelado.
+
+    Levanta ImportError se websockets não estiver instalado (para que o
+    caller possa activar o fallback inline).
+    Levanta OSError se a porta estiver ocupada ou sem permissão.
+    """
+    # Log imediato — antes de qualquer import, para garantir visibilidade no journal
+    log.info("[WS] start_ws() chamado — host=%s port=%d", host, port)
+    print(f"[NEXUS WS] start_ws() host={host} port={port}", flush=True)
+
     try:
         import websockets  # type: ignore
-    except ImportError:
+        ws_ver = getattr(websockets, "__version__", "desconhecida")
+        log.info("[WS] websockets importado OK — versão=%s", ws_ver)
+    except ImportError as exc:
         log.error(
-            "Package 'websockets' não instalado. "
-            "Corre: pip3 install websockets"
+            "[WS] ERRO: package 'websockets' não instalado no venv activo (%s). "
+            "Corre: %s -m pip install 'websockets==10.4'",
+            exc,
+            __import__('sys').executable,
         )
-        return
+        raise  # propaga para _start_ws() activar o fallback
 
-    log.info("NEXUS WebSocket → ws://%s:%d", host, port)
+    log.info("[WS] A iniciar websockets.serve em ws://%s:%d ...", host, port)
     try:
         async with websockets.serve(_handler, host, port):  # type: ignore[attr-defined]
-            log.info("NEXUS WebSocket a escutar em ws://%s:%d", host, port)
+            log.info("[WS] NEXUS WebSocket ONLINE em ws://%s:%d", host, port)
+            print(f"[NEXUS WS] ONLINE ws://{host}:{port}", flush=True)
             await asyncio.Future()  # corre até ser cancelado
     except OSError as exc:
-        log.error("Não consigo ligar WS a %s:%d → %s", host, port, exc)
+        log.error("[WS] Não consigo ligar a %s:%d → %s", host, port, exc)
+        raise
     except asyncio.CancelledError:
-        log.info("WS server parado")
+        log.info("[WS] Server parado (CancelledError)")
+        raise
+    except Exception as exc:
+        log.exception("[WS] Erro inesperado em ws://%s:%d", host, port)
+        raise
 
 
 if __name__ == "__main__":

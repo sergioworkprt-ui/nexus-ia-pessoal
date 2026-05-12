@@ -82,35 +82,63 @@ except Exception as _e:
 async def _start_ws() -> None:
     h = os.getenv("WS_HOST", "0.0.0.0")
     p = int(os.getenv("WS_PORT", "8001"))
+
+    # Log imediato para garantir visibilidade no journal
+    log.info("[WS] _start_ws() → host=%s port=%d  python=%s", h, p, sys.executable)
+    print(f"[NEXUS WS] _start_ws() host={h} port={p} python={sys.executable}", flush=True)
+
+    # ── Tentativa 1: ws_server.py dedicado ───────────────────────────────
     try:
         from nexus.ws_server import start_ws  # type: ignore
+        log.info("[WS] nexus.ws_server importado — a chamar start_ws()")
         await start_ws(h, p)
-        return
-    except ImportError:
-        pass
-    except (asyncio.CancelledError, Exception) as ex:
-        if not isinstance(ex, asyncio.CancelledError):
-            log.error("ws_server erro: %s", ex)
-        return
-    # Fallback WS inline
+        return  # só chega aqui se start_ws() terminar normalmente (cancelado)
+    except ImportError as ex:
+        log.warning("[WS] nexus.ws_server não disponível (%s) — a tentar fallback inline", ex)
+    except asyncio.CancelledError:
+        raise
+    except Exception as ex:
+        # Log com stacktrace COMPLETO para diagnóstico
+        log.exception("[WS] nexus.ws_server.start_ws() falhou — a tentar fallback inline")
+    # NOTA: não fazemos return aqui — continuamos para o fallback
+
+    # ── Tentativa 2: websockets inline ───────────────────────────────────
+    log.info("[WS] A iniciar fallback websockets inline em ws://%s:%d", h, p)
     try:
         import websockets  # type: ignore
+        ws_ver = getattr(websockets, "__version__", "?")
+        log.info("[WS] websockets inline — versão=%s", ws_ver)
+
         _cl: set = set()
-        async def _hh(ws):
+
+        async def _hh(ws: object) -> None:
             _cl.add(ws)
             try:
-                await ws.send(json.dumps({"type": "connected"}))
-                async for _ in ws:
+                await ws.send(json.dumps({"type": "connected", "mode": "inline"}))  # type: ignore
+                async for _ in ws:  # type: ignore
                     pass
             except Exception:
                 pass
             finally:
                 _cl.discard(ws)
-        log.info("WS inline → ws://%s:%d", h, p)
+
         async with websockets.serve(_hh, h, p):  # type: ignore
+            log.info("[WS] Fallback inline ONLINE em ws://%s:%d", h, p)
+            print(f"[NEXUS WS] fallback inline ONLINE ws://{h}:{p}", flush=True)
             await asyncio.Future()
-    except Exception as ex:
-        log.error("WS inline falhou: %s", ex)
+
+    except ImportError as ex:
+        log.error(
+            "[WS] ERRO FATAL: websockets não instalado no venv activo.\n"
+            "  Python: %s\n"
+            "  Erro:   %s\n"
+            "  Fix:    %s -m pip install 'websockets==10.4'",
+            sys.executable, ex, sys.executable,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("[WS] Fallback inline falhou em %s:%d", h, p)
 
 
 # ─ Módulos opcionais (modo completo) ───────────────────────────────────────
@@ -145,6 +173,7 @@ def _load(lbl, fn):
 # ─ Main ──────────────────────────────────────────────────────────────────────
 async def main() -> None:
     log.info("═══ NEXUS v2 a iniciar (%s) ═══", "COMPLETO" if _FULL else "MÍNIMO")
+    log.info("Python: %s", sys.executable)
 
     ah = os.getenv("API_HOST", os.getenv("HOST", "0.0.0.0"))
     ap = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
