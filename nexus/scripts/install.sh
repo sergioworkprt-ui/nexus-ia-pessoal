@@ -8,14 +8,14 @@
 # =============================================================================
 set -euo pipefail
 
-# ── colours ──────────────────────────────────────────────────────────────────
+# ── colours ──────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}[OK]${NC}  $*"; }
 info() { echo -e "${BLUE}[--]${NC}  $*"; }
 warn() { echo -e "${YELLOW}[!!]${NC}  $*"; }
 die()  { echo -e "${RED}[ERR]${NC} $*" >&2; exit 1; }
 
-# ── flags ────────────────────────────────────────────────────────────────────
+# ── flags ──────────────────────────────────────────────────────────────────────
 SAFE_MODE=false
 UPDATE_ONLY=false
 for arg in "$@"; do
@@ -27,7 +27,7 @@ done
 
 [[ $EUID -eq 0 ]] || die "Run as root: sudo bash $0"
 
-# ── paths ────────────────────────────────────────────────────────────────────
+# ── paths ──────────────────────────────────────────────────────────────────────
 NEXUS_HOME=/opt/nexus
 VENV=$NEXUS_HOME/venv
 LOG_DIR=/var/log/nexus
@@ -35,11 +35,11 @@ DATA_DIR=/data/nexus
 FRONTEND=$NEXUS_HOME/nexus/dashboard/frontend
 SERVICE_USER=nexus
 
-echo -e "\n${BLUE}══════════════════════════════════════════════${NC}"
+echo -e "\n${BLUE}════════════════════════════════════════════${NC}"
 echo -e "${BLUE}   NEXUS AI — Instalador VPS${NC}"
-echo -e "${BLUE}══════════════════════════════════════════════${NC}\n"
+echo -e "${BLUE}════════════════════════════════════════════${NC}\n"
 
-# ── 1. System packages ───────────────────────────────────────────────────────
+# ── 1. System packages ──────────────────────────────────────────────────────────────
 install_pkg() {
   local pkg=$1
   if dpkg -s "$pkg" &>/dev/null; then
@@ -76,7 +76,7 @@ else
   warn "Skipping apt packages (safe/update mode)"
 fi
 
-# ── 2. System user ───────────────────────────────────────────────────────────
+# ── 2. System user ─────────────────────────────────────────────────────────────────
 if ! id -u $SERVICE_USER &>/dev/null; then
   info "Creating system user '$SERVICE_USER'…"
   useradd --system --shell /usr/sbin/nologin --home-dir $NEXUS_HOME \
@@ -86,7 +86,7 @@ else
   ok "User $SERVICE_USER already exists"
 fi
 
-# ── 3. Directories ───────────────────────────────────────────────────────────
+# ── 3. Directories ─────────────────────────────────────────────────────────────────
 for d in "$NEXUS_HOME" "$LOG_DIR" "$DATA_DIR" "$DATA_DIR/memory" "$DATA_DIR/tasks" "$DATA_DIR/evolution"; do
   mkdir -p "$d"
 done
@@ -94,7 +94,7 @@ chown -R $SERVICE_USER:$SERVICE_USER "$LOG_DIR" "$DATA_DIR"
 chmod -R 775 "$LOG_DIR" "$DATA_DIR"
 ok "Directories ready"
 
-# ── 4. Clone / update code ───────────────────────────────────────────────────
+# ── 4. Clone / update code ──────────────────────────────────────────────────────────────
 if [[ ! -d $NEXUS_HOME/.git ]]; then
   info "Cloning NEXUS repository…"
   git clone https://github.com/sergioworkprt-ui/nexus-ia-pessoal.git $NEXUS_HOME
@@ -110,7 +110,7 @@ fi
 chown -R $SERVICE_USER:$SERVICE_USER $NEXUS_HOME
 ok "Code up to date"
 
-# ── 5. Python venv + dependencies ────────────────────────────────────────────
+# ── 5. Python venv + dependencies ──────────────────────────────────────────────────────
 if [[ ! -d $VENV ]]; then
   info "Creating Python venv…"
   python3 -m venv $VENV
@@ -121,12 +121,31 @@ $VENV/bin/pip install --quiet -r $NEXUS_HOME/nexus/requirements.txt
 chown -R $SERVICE_USER:$SERVICE_USER $VENV
 ok "Python venv ready"
 
-# ── 6. Build React frontend ───────────────────────────────────────────────────
+# ── 6. Build React frontend ────────────────────────────────────────────────────────────────
 if [[ -d $FRONTEND ]]; then
   info "Building React dashboard…"
-  cat > "$FRONTEND/.env.local" <<EOF
-VITE_API_URL=http://localhost:8000
+
+  # Detectar IP público da máquina para configurar o frontend
+  SERVER_IP=$(
+    curl -s --max-time 5 https://api.ipify.org 2>/dev/null ||
+    curl -s --max-time 5 https://ifconfig.me 2>/dev/null ||
+    hostname -I | awk '{print $1}'
+  )
+  info "IP detectado para o frontend: $SERVER_IP"
+
+  # Escrever AMBOS .env e .env.local para que o IP correcto seja injectado
+  # no bundle pelo Vite (.env.local tem prioridade sobre .env)
+  cat > "$FRONTEND/.env" <<EOF
+# Gerado por install.sh em $(date)
+VITE_API_URL=http://${SERVER_IP}:8000
+VITE_WS_URL=ws://${SERVER_IP}:8001
 EOF
+  cat > "$FRONTEND/.env.local" <<EOF
+# Gerado por install.sh em $(date)
+VITE_API_URL=http://${SERVER_IP}:8000
+VITE_WS_URL=ws://${SERVER_IP}:8001
+EOF
+
   cd $FRONTEND
   npm ci --silent
   npm run build --silent
@@ -136,7 +155,7 @@ else
   warn "Frontend directory not found at $FRONTEND — skipping build"
 fi
 
-# ── 7. Environment file ───────────────────────────────────────────────────────
+# ── 7. Environment file ────────────────────────────────────────────────────────────────
 ENV_FILE=$NEXUS_HOME/.env
 if [[ ! -f $ENV_FILE ]]; then
   info "Creating .env template…"
@@ -144,16 +163,16 @@ if [[ ! -f $ENV_FILE ]]; then
 # NEXUS AI — Environment Configuration
 # Copy this file and fill in your secrets.
 
-# ── Core ──────────────────────────────────────────────────────────────────────
+# ── Core ────────────────────────────────────────────────────────────────────────────
 SECRET_KEY=CHANGE_ME_use_openssl_rand_hex_32
 NEXUS_PIN=                        # leave empty to set on first login
 
-# ── AI Providers ──────────────────────────────────────────────────────────────
+# ── AI Providers ────────────────────────────────────────────────────────────────────────
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
 
-# ── Trading ───────────────────────────────────────────────────────────────────
+# ── Trading ──────────────────────────────────────────────────────────────────────────
 XTB_ACCOUNT_ID=
 XTB_PASSWORD=
 XTB_MODE=demo                      # demo | real
@@ -162,20 +181,22 @@ IBKR_HOST=127.0.0.1
 IBKR_PORT=7497
 IBKR_CLIENT_ID=1
 
-# ── Services ──────────────────────────────────────────────────────────────────
+# ── Services ──────────────────────────────────────────────────────────────────────────
 SERP_API_KEY=                       # for TruthChecker web search
 
-# ── Paths (do not change unless you know what you're doing) ───────────────────
+# ── Ports / Network ────────────────────────────────────────────────────────────────────
 LOG_DIR=/var/log/nexus
 DATA_DIR=/data/nexus
 NEXUS_API_URL=http://localhost:8000
 DASHBOARD_PORT=9000
+API_PORT=8000
+WS_HOST=0.0.0.0
+WS_PORT=8001
 EOF
   chown $SERVICE_USER:$SERVICE_USER "$ENV_FILE"
   chmod 640 "$ENV_FILE"
   ok ".env template created at $ENV_FILE"
 else
-  # Ensure LOG_DIR is absolute in existing .env
   if grep -q 'LOG_DIR=logs' "$ENV_FILE" 2>/dev/null; then
     sed -i 's|LOG_DIR=logs|LOG_DIR=/var/log/nexus|g' "$ENV_FILE"
     warn "Fixed relative LOG_DIR in $ENV_FILE → /var/log/nexus"
@@ -183,7 +204,7 @@ else
   ok ".env already exists — not overwritten"
 fi
 
-# ── 8. Systemd services ───────────────────────────────────────────────────────
+# ── 8. Systemd services ────────────────────────────────────────────────────────────────
 write_service() {
   local name=$1 desc=$2 exec_start=$3 after=${4:-network.target}
   cat > "/etc/systemd/system/${name}.service" <<EOF
@@ -238,23 +259,23 @@ for svc in nexus-api nexus-core nexus-dashboard; do
 done
 ok "Systemd services enabled"
 
-# ── 9. Start / restart services ───────────────────────────────────────────────
+# ── 9. Start / restart services ─────────────────────────────────────────────────────────────
 info "Starting NEXUS services…"
 for svc in nexus-api nexus-core nexus-dashboard; do
   systemctl restart "$svc" && ok "$svc started" || warn "$svc failed to start — check: journalctl -u $svc -n 50"
 done
 
-# ── 10. Firewall (optional) ───────────────────────────────────────────────────
+# ── 10. Firewall (optional) ─────────────────────────────────────────────────────────────
 if command -v ufw &>/dev/null; then
   ufw allow 9000/tcp comment 'NEXUS Dashboard' 2>/dev/null || true
   ok "ufw: port 9000 open"
 fi
 
-# ── Done ─────────────────────────────────────────────────────────────────────
+# ── Done ─────────────────────────────────────────────────────────────────────────────
 SERVER_IP=$(hostname -I | awk '{print $1}')
-echo -e "\n${GREEN}══════════════════════════════════════════════${NC}"
+echo -e "\n${GREEN}════════════════════════════════════════════${NC}"
 echo -e "${GREEN}   NEXUS AI instalado com sucesso!${NC}"
-echo -e "${GREEN}══════════════════════════════════════════════${NC}"
+echo -e "${GREEN}════════════════════════════════════════════${NC}"
 echo -e "  Dashboard : ${BLUE}http://$SERVER_IP:9000${NC}"
 echo -e "  API       : ${BLUE}http://$SERVER_IP:8000/docs${NC}"
 echo -e "  Logs      : journalctl -u nexus-api -f"
