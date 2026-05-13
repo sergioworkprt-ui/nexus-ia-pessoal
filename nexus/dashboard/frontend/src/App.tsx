@@ -72,7 +72,6 @@ export default function App() {
         {/* Top bar */}
         <header className="flex items-center justify-between px-4 py-2.5 border-b border-nexus-border shrink-0">
           <div className="flex items-center gap-2.5">
-            {/* Live state avatar — small indicator, always visible */}
             <Avatar state={avatarState} size="sm" />
             <span className="font-semibold tracking-widest text-nexus-accent uppercase text-sm">
               NEXUS
@@ -90,7 +89,12 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-hidden">
+        {/*
+          min-h-0 é crítico: por defeito flex items têm min-height: auto,
+          o que impede que o filho com overflow-y:auto funçãone correctamente.
+          Com min-h-0, o browser respeita o overflow do painel activo.
+        */}
+        <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
           {panels[tab]}
         </main>
       </div>
@@ -100,7 +104,7 @@ export default function App() {
 
 function About() {
   return (
-    <div className="p-8 max-w-lg">
+    <div className="p-8 max-w-lg overflow-y-auto">
       <h2 className="text-nexus-accent text-lg font-bold mb-4">NEXUS v2.0</h2>
       <ul className="space-y-2 text-sm text-gray-300">
         {[

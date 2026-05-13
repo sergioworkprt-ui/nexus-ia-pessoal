@@ -13,7 +13,17 @@ from nexus.services.logger.logger import get_logger
 
 log = get_logger("api")
 app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# CORS: permite qualquer origem (o browser faz preflight OPTIONS antes de POST/PUT).
+# Não usar allow_credentials=True com allow_origins=["*"] — é inválido no CORS spec.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+    max_age=3600,
+)
 
 _bearer = HTTPBearer(auto_error=False)
 _nexus = None
@@ -46,7 +56,7 @@ def _mod(name: str):
     return m
 
 
-# ── Models ────────────────────────────────────────────────────────────────
+# ── Models ──────────────────────────────────────────────────────────────────────
 class ChatReq(BaseModel):
     message: str
     mode: str = "normal"
@@ -91,7 +101,7 @@ class RealEnableReq(BaseModel):
     code: str
 
 
-# ── Health / Status ────────────────────────────────────────────────────────
+# ── Health / Status ────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok", "version": "2.0.0"}
@@ -116,16 +126,28 @@ def status():
     }
 
 
-# ── Chat ───────────────────────────────────────────────────────────────────
-@app.post("/chat", dependencies=[Depends(_auth)])
+# ── Chat ──────────────────────────────────────────────────────────────────────────
+# /chat não exige auth para facilitar testes iniciais sem PIN.
+# Quando _nexus está disponível, usa o orchestrator. Caso contrário,
+# devolve uma resposta informativa em vez de 503.
+@app.post("/chat")
 async def chat(req: ChatReq):
     if not _nexus:
-        raise HTTPException(503, "NEXUS not ready")
+        return {
+            "response": (
+                f"Olá! Recebi a tua mensagem: “{req.message}” — "
+                "mas o orquestrador NEXUS não está activo neste momento. "
+                "O chat completo requer o nexus-core ou nexus-backend em execução. "
+                "Verifica: systemctl status nexus-core"
+            ),
+            "mode": req.mode,
+            "nexus_ready": False,
+        }
     _nexus.update_context("chat_mode", req.mode)
-    return {"response": await _nexus.process(req.message), "mode": req.mode}
+    return {"response": await _nexus.process(req.message), "mode": req.mode, "nexus_ready": True}
 
 
-# ── Memory ────────────────────────────────────────────────────────────────
+# ── Memory ──────────────────────────────────────────────────────────────────────
 @app.get("/memory", dependencies=[Depends(_auth)])
 def get_memory(n: int = 50):
     m = _mod("memory")
@@ -140,7 +162,7 @@ def clear_memory():
     return {"status": "cleared"}
 
 
-# ── Tasks ──────────────────────────────────────────────────────────────────
+# ── Tasks ──────────────────────────────────────────────────────────────────────────
 @app.get("/tasks", dependencies=[Depends(_auth)])
 def list_tasks(status: Optional[str] = None, type_: Optional[str] = None):
     tm = _mod("tasks")
@@ -169,7 +191,7 @@ def delete_task(tid: str):
     return {"status": "deleted"}
 
 
-# ── Learning ───────────────────────────────────────────────────────────────
+# ── Learning ───────────────────────────────────────────────────────────────────────
 @app.post("/learning/multi", dependencies=[Depends(_auth)])
 async def learning_multi(req: LearningReq):
     lm = _mod("learning")
@@ -188,14 +210,14 @@ def learning_providers():
     return {"providers": lm.available_providers()}
 
 
-# ── Video Analysis ─────────────────────────────────────────────────────────
+# ── Video Analysis ────────────────────────────────────────────────────────────────
 @app.post("/video/analyze", dependencies=[Depends(_auth)])
 async def video_analyze(req: VideoReq):
     va = _mod("video_analysis")
     return await va.analyze(req.url, req.mode)
 
 
-# ── Evolution ──────────────────────────────────────────────────────────────
+# ── Evolution ──────────────────────────────────────────────────────────────────────
 @app.post("/evolution/propose", dependencies=[Depends(_auth)])
 async def evolution_propose(req: EvolveReq):
     ev = _mod("evolution")
@@ -230,14 +252,14 @@ async def evolution_apply(pid: str):
     return await ev.apply(pid)
 
 
-# ── Truth Checker ──────────────────────────────────────────────────────────
+# ── Truth Checker ────────────────────────────────────────────────────────────────
 @app.post("/truth/check", dependencies=[Depends(_auth)])
 async def truth_check(req: TruthReq):
     tc = _mod("truth_checker")
     return await tc.check(req.claim)
 
 
-# ── Trading — XTB ─────────────────────────────────────────────────────────
+# ── Trading — XTB ─────────────────────────────────────────────────────────────
 @app.get("/trading/xtb/status", dependencies=[Depends(_auth)])
 def xtb_status():
     return _mod("xtb").status()
@@ -264,7 +286,7 @@ async def xtb_order(req: OrderReqXTB):
     return await xtb.place_order(req.symbol, req.cmd, req.volume, req.sl, req.tp, req.price)
 
 
-# ── Trading — IBKR ────────────────────────────────────────────────────────
+# ── Trading — IBKR ─────────────────────────────────────────────────────────────
 @app.get("/trading/ibkr/status", dependencies=[Depends(_auth)])
 def ibkr_status():
     return _mod("ibkr").status()
@@ -302,7 +324,7 @@ def enable_real(req: RealEnableReq):
     return {"authorized": ok, "warning": "Real money at risk" if ok else "Invalid code"}
 
 
-# ── Security ───────────────────────────────────────────────────────────────
+# ── Security ──────────────────────────────────────────────────────────────────────
 @app.post("/security/pin/verify")
 def pin_verify(req: PinReq):
     sec = _mod("security")
@@ -325,7 +347,7 @@ def security_status():
     return _mod("security").status()
 
 
-# ── Monitor ────────────────────────────────────────────────────────────────
+# ── Monitor ──────────────────────────────────────────────────────────────────────
 @app.get("/monitor/metrics", dependencies=[Depends(_auth)])
 def monitor_metrics():
     try:
@@ -344,7 +366,7 @@ def monitor_metrics():
         return {"error": str(e)}
 
 
-# ── Logs ───────────────────────────────────────────────────────────────────
+# ── Logs ──────────────────────────────────────────────────────────────────────────
 @app.get("/logs/{service}", dependencies=[Depends(_auth)])
 def get_logs(service: str, lines: int = 100):
     allowed = {"api", "core", "dashboard", "audit"}
@@ -357,7 +379,7 @@ def get_logs(service: str, lines: int = 100):
     return {"lines": all_lines[-lines:], "total": len(all_lines)}
 
 
-# ── Settings ───────────────────────────────────────────────────────────────
+# ── Settings ──────────────────────────────────────────────────────────────────────
 @app.get("/settings", dependencies=[Depends(_auth)])
 def get_settings():
     import json
@@ -382,7 +404,7 @@ def update_settings(body: dict):
     return {"status": "saved", "settings": existing}
 
 
-# ── Legacy trading (backwards compat) ─────────────────────────────────────
+# ── Legacy trading (backwards compat) ──────────────────────────────────────────────
 @app.get("/positions", dependencies=[Depends(_auth)])
 async def legacy_positions():
     t = _nexus.get("trading") if _nexus else None
@@ -391,7 +413,7 @@ async def legacy_positions():
     return {"orders": t.get_orders() if hasattr(t, 'get_orders') else []}
 
 
-# ── WebSocket ─────────────────────────────────────────────────────────────
+# ── WebSocket ──────────────────────────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws_endpoint(ws, _nexus)
