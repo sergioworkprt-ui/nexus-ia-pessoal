@@ -1,0 +1,35 @@
+name: Daily Backup
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: Daily Backup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run backup on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/nexus
+            bash scripts/backup.sh
+            bash scripts/backup_remote.sh 2>/dev/null || echo "Remote backup skipped (not configured)"
+
+      - name: Report backup status
+        if: always()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            echo "=== Backup Summary ==="
+            ls -lh /opt/nexus/backups/ 2>/dev/null || echo "No backups directory"
+            tail -5 /opt/nexus/logs/backup.log 2>/dev/null || echo "No backup log"

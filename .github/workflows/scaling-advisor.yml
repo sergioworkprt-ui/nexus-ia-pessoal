@@ -1,0 +1,32 @@
+name: Scaling Advisor
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  scaling:
+    name: Scaling Advisor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run load monitor on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/nexus
+            bash scripts/load_monitor.sh 2>&1
+            # Copy report for artifact
+            cp monitor/load_report.md /tmp/load_report_${{ github.run_number }}.md 2>/dev/null || true
+
+      - name: Download load report
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cat /opt/nexus/monitor/load_report.md

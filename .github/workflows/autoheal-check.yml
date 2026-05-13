@@ -1,0 +1,33 @@
+name: Autoheal Check
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  autoheal:
+    name: Autoheal Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run autoheal on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/nexus
+            bash scripts/autoheal.sh 2>&1 | tail -20
+
+      - name: Collect monitor snapshot
+        if: always()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/nexus
+            bash scripts/monitor_collect.sh 2>&1 | tail -5
