@@ -1,0 +1,45 @@
+name: Manual Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      commits_back:
+        description: 'Quantos commits reverter (ex: 1, 2, 3)'
+        required: false
+        default: '1'
+        type: string
+      reason:
+        description: 'Motivo do rollback (para audit log)'
+        required: false
+        default: 'Rollback manual'
+        type: string
+
+jobs:
+  rollback:
+    name: Manual Rollback
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Run manual rollback on VPS
+        id: rollback
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/nexus/scripts/rollback.sh manual '${{ github.event.inputs.commits_back }}' '${{ github.event.inputs.reason }}'"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo '## Manual Rollback' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '| Item | Value |' >> $GITHUB_STEP_SUMMARY
+          echo '|------|-------|' >> $GITHUB_STEP_SUMMARY
+          echo "| Commits revertidos | ${{ github.event.inputs.commits_back }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Motivo | ${{ github.event.inputs.reason }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor  | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ steps.rollback.outcome }} |" >> $GITHUB_STEP_SUMMARY

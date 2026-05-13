@@ -6,12 +6,46 @@ on:
       - claude/create-test-file-d1AY6
 
 jobs:
-  deploy:
+  # ── 1. Testes ─────────────────────────────────────────────────────────────────
+  test:
+    name: Tests
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run Python structure & syntax tests
+        run: pytest tests/ -v --tb=short
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: nexus/dashboard/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: nexus/dashboard/frontend
+        run: npm ci --prefer-offline
+
+      - name: TypeScript type-check
+        working-directory: nexus/dashboard/frontend
+        run: npx tsc --noEmit
+
+  # ── 2. Deploy ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Setup SSH
         run: |
@@ -21,17 +55,34 @@ jobs:
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to VPS
+        id: deploy
         run: |
-          set -x
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            cd /opt/nexus &&
-            git pull origin claude/create-test-file-d1AY6 &&
-            sudo systemctl restart nexus-core &&
-            sudo systemctl restart nexus-api &&
-            sudo bash nexus/scripts/rebuild_dashboard.sh 35.241.151.115
-          "
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/nexus/scripts/deploy_vps.sh '${{ github.sha }}'"
 
+      - name: Health check
+        id: health
+        run: |
+          sleep 10
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/nexus/scripts/health_check.sh"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo '## Deploy Summary' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '| Item | Value |' >> $GITHUB_STEP_SUMMARY
+          echo '|------|-------|' >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`claude/create-test-file-d1AY6\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor  | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy | ${{ steps.deploy.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health | ${{ steps.health.outcome }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ── 3. Auto-rollback (só corre se deploy falhar) ──────────────────────────────
   rollback:
+    name: Auto-rollback
     runs-on: ubuntu-latest
     needs: deploy
     if: failure()
@@ -43,8 +94,13 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Run rollback on VPS
+      - name: Run auto-rollback on VPS
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            sudo bash /opt/nexus/scripts/rollback.sh
-          "
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/nexus/scripts/rollback.sh auto 1"
+
+      - name: Rollback summary
+        if: always()
+        run: |
+          echo '## Auto-Rollback Triggered' >> $GITHUB_STEP_SUMMARY
+          echo 'Deploy falhou — VPS revertido para o commit anterior.' >> $GITHUB_STEP_SUMMARY
