@@ -30,10 +30,6 @@ cat "$FRONTEND/.env" 2>/dev/null || echo "(não existe)"
 echo -e "${YELLOW}=== $FRONTEND/.env.local ===${NC}"
 cat "$FRONTEND/.env.local" 2>/dev/null || echo "(não existe)"
 echo ""
-# CAUSA RAIZ: install.sh cria .env.local com VITE_API_URL=http://localhost:8000
-# e SEM VITE_WS_URL. Em Vite, .env.local tem prioridade sobre .env.
-# Por isso os nossos rebuild anteriores escreviam .env mas o bundle
-# ficava sempre com localhost. Solução: escrever ambos .env e .env.local.
 
 # ── 1. Detectar IP do VPS ──────────────────────────────────────────────
 info "[1] A detectar IP do VPS..."
@@ -63,7 +59,10 @@ fi
 
 ok "IP: $VPS_IP"
 
-API_PORT="8000"; WS_PORT="8001"
+# Portas:
+# API_PORT: REST API do nexus-core (porta 8000)
+# WS_PORT:  WebSocket do nexus-core (porta 8801) — DIFERENTE da porta 8001 do nexus-api
+API_PORT="8000"; WS_PORT="8801"
 if [[ -f "$BACKEND_ENV" ]]; then
     _p=$(grep -E "^API_PORT=" "$BACKEND_ENV" 2>/dev/null | cut -d= -f2 | tr -d '"')
     _w=$(grep -E "^WS_PORT=" "$BACKEND_ENV" 2>/dev/null | cut -d= -f2 | tr -d '"')
@@ -84,12 +83,12 @@ ok "$FRONTEND/package.json"
 # ── 3. Escrever .env E .env.local com URLs correctos ───────────────────────────
 info "[3] A escrever .env e .env.local (Vite: .env.local tem prioridade sobre .env)..."
 
-ENV_CONTENT="""# Gerado por rebuild_dashboard.sh em $(date)
+ENV_CONTENT="# Gerado por rebuild_dashboard.sh em $(date)
 # VITE injeta estas vars no bundle em build time -- nao em runtime!
 # IMPORTANTE: .env.local tem prioridade sobre .env no Vite.
 VITE_API_URL=${VITE_API_URL}
 VITE_WS_URL=${VITE_WS_URL}
-"""
+"
 
 # Escrever ambos para garantir que nao ha ficheiro antigo a sobrepor-se
 echo "$ENV_CONTENT" > "$FRONTEND/.env"
@@ -145,6 +144,14 @@ else
     ls -la "$FRONTEND"/.env* 2>/dev/null
 fi
 
+# Confirmar que a porta WS correcta está no bundle
+if grep -r "${WS_PORT}" "$FRONTEND/dist/" &>/dev/null 2>&1; then
+    ok "Porta WS ${WS_PORT} confirmada no bundle"
+else
+    fail "Porta WS ${WS_PORT} NAO encontrada no bundle!"
+    warn "O dashboard vai tentar ligar à porta errada."
+fi
+
 # Confirmar que import.meta.env foi substituído pelo Vite
 if grep -rl "import\.meta\.env" "$FRONTEND/dist/" &>/dev/null 2>&1; then
     fail "'import.meta.env' ainda no bundle! O Vite NAO substituiu as vars de ambiente."
@@ -179,7 +186,7 @@ RESP=$(curl -s --max-time 5 http://localhost:9000/ 2>/dev/null | head -5)
 echo "$RESP"
 if echo "$RESP" | grep -qi "<!doctype\|<html"; then
     ok "Servidor a devolver HTML"
-    if echo "$RESP" | grep -qi "type=\"module\""; then
+    if echo "$RESP" | grep -qi 'type="module"'; then
         ok "HTML contém type=\"module\" (bundle Vite correcto)"
     fi
 else
@@ -197,7 +204,7 @@ fi
 
 # ── 12. Estado final ─────────────────────────────────────────────────────────────
 echo ""
-for entry in "8000:API" "8001:WebSocket" "9000:Dashboard"; do
+for entry in "8000:API(nexus-core)" "8001:API(nexus-api)" "8801:WebSocket(nexus-core)" "9000:Dashboard"; do
     PORT="${entry%%:*}"; LABEL="${entry##*:}"
     ss -tulpn 2>/dev/null | grep -q ":${PORT}" && ok "$LABEL (${PORT}): ABERTO" || warn "$LABEL (${PORT}): FECHADO"
 done

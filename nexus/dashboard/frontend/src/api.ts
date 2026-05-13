@@ -93,10 +93,14 @@ export const api = {
 }
 
 /**
- * URL do WebSocket:
- * - Usa VITE_WS_URL se definido (ex: ws://35.241.151.115:8001)
- * - Caso contrário, deriva do VITE_API_URL substituindo http→ws e adicionando /ws
+ * URL do WebSocket do nexus-core.
+ * - Usa VITE_WS_URL se definido (ex: ws://35.241.151.115:8801)
+ * - Fallback local: porta 8801 (nexus-core WS), nunca derivada da API_PORT
  */
-export const wsUrl = (): string =>
-  (import.meta.env.VITE_WS_URL as string | undefined) ??
-  `${BASE.replace(/^http/, 'ws')}/ws`
+export const wsUrl = (): string => {
+  const envWs = import.meta.env.VITE_WS_URL as string | undefined
+  if (envWs) return envWs
+  // Fallback dev local: extrai o host de BASE e usa porta 8801 (nexus-core WS)
+  const host = BASE.replace(/^https?:\/\//, '').replace(/:\d+$/, '')
+  return `ws://${host}:8801`
+}
