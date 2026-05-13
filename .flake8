@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 120
+# E203: whitespace before ':' (conflito com black)
+# W503/W504: line break before/after binary operator
+# E402: module level import not at top of file (sys.path manipulation)
+# F401: imported but unused (alguns são re-exports ou usados indirectamente)
+extend-ignore = E203,W503,W504,E402,F401
+per-file-ignores =
+    tests/*: F811,E501
+exclude =
+    .git,
+    __pycache__,
+    node_modules,
+    dist,
+    .venv,
+    venv,
+    build

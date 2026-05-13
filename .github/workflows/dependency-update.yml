@@ -1,0 +1,134 @@
+name: Monthly Dependency Update
+
+on:
+  schedule:
+    - cron: '0 9 1 * *'  # Dia 1 de cada mês às 09:00 UTC
+  workflow_dispatch:
+
+jobs:
+  update:
+    name: Update Dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update Python deps
+        run: |
+          pip install --upgrade pip
+          pip install --upgrade -r nexus/requirements.txt
+
+          python3 << 'PYEOF'
+          import subprocess, re, json
+
+          result = subprocess.run(
+              ["pip", "list", "--format=json"], capture_output=True, text=True
+          )
+          installed = {p["name"].lower(): p["version"] for p in json.loads(result.stdout)}
+
+          lines = open("nexus/requirements.txt").read().splitlines()
+          new_lines, changelog = [], []
+
+          for line in lines:
+              stripped = line.strip()
+              if not stripped or stripped.startswith("#"):
+                  new_lines.append(line)
+                  continue
+              pkg = re.split(r"[\s>=<!\[]", stripped)[0]
+              key = pkg.lower().replace("_", "-")
+              ver = installed.get(pkg.lower()) or installed.get(key)
+              if ver:
+                  m = re.search(r">=(\S+)", line)
+                  old = m.group(1) if m else None
+                  if old and old != ver:
+                      changelog.append(f"- `{pkg}`: {old} → {ver}")
+                      new_lines.append(f"{pkg}>={ver}")
+                      continue
+              new_lines.append(line)
+
+          open("nexus/requirements.txt", "w").write("\n".join(new_lines) + "\n")
+
+          with open("/tmp/py_changelog.md", "w") as f:
+              content = "### Python\n" + ("\n".join(changelog) if changelog else "Sem alterações.")
+              f.write(content)
+          PYEOF
+
+      - name: Update npm deps
+        working-directory: nexus/dashboard/frontend
+        run: |
+          # Capturar estado antes do update
+          npm outdated --json > /tmp/npm_outdated.json 2>/dev/null || true
+          npm install --prefer-offline 2>/dev/null || true
+          npm audit fix 2>/dev/null || true
+
+          python3 << 'PYEOF'
+          import json
+          try:
+              data = json.loads(open("/tmp/npm_outdated.json").read())
+          except Exception:
+              data = {}
+          lines = []
+          for pkg, info in data.items():
+              cur = info.get("current", "?")
+              lat = info.get("latest", "?")
+              if cur != lat:
+                  lines.append(f"- `{pkg}`: {cur} → {lat}")
+          with open("/tmp/npm_changelog.md", "w") as f:
+              f.write("### JavaScript\n" + ("\n".join(lines) if lines else "Sem alterações."))
+          PYEOF
+
+      - name: Run tests
+        run: |
+          pip install pytest
+          pytest tests/ -v --tb=short
+
+      - name: Create PR if changes exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MONTH=$(date +%Y-%m)
+          BRANCH="deps/monthly-${MONTH}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+
+          git add nexus/requirements.txt
+          git add nexus/dashboard/frontend/package-lock.json 2>/dev/null || true
+
+          if git diff --staged --quiet; then
+            echo "Sem alterações de dependências — PR não criado."
+            exit 0
+          fi
+
+          git commit -m "chore(deps): monthly update ${MONTH}"
+          git push origin "$BRANCH"
+
+          {
+            echo "## Monthly Dependency Update — ${MONTH}"
+            echo ""
+            cat /tmp/py_changelog.md
+            echo ""
+            cat /tmp/npm_changelog.md 2>/dev/null || echo "### JavaScript\nNão verificado."
+            echo ""
+            echo "---"
+            echo "_Gerado automaticamente pelo workflow Monthly Dependency Update_"
+          } > /tmp/pr_body.md
+
+          gh pr create \
+            --base claude/create-test-file-d1AY6 \
+            --head "$BRANCH" \
+            --title "chore(deps): Monthly update ${MONTH}" \
+            --body-file /tmp/pr_body.md

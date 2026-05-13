@@ -1,0 +1,68 @@
+name: Weekly Health Audit
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Todas as 2as-feiras às 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  health-audit:
+    name: Weekly Health Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Run health check on VPS
+        id: hc
+        continue-on-error: true
+        run: |
+          REPORT=$(ssh -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/nexus/scripts/health_check.sh 2>&1" || true)
+          HC_EXIT=${PIPESTATUS[0]:-0}
+
+          STATUS="OK"
+          echo "$REPORT" | grep -qE "FALHAS|FAIL|FECHADA|INACTIVE" && STATUS="DEGRADED"
+
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+          DATE=$(date -u '+%Y-%m-%d')
+          DATETIME=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+          mkdir -p reports
+          {
+            echo "# NEXUS Health Report — ${DATETIME}"
+            echo ""
+            echo "**Status:** ${STATUS}"
+            echo "**VPS:** 35.241.151.115"
+            echo "**Branch:** claude/create-test-file-d1AY6"
+            echo ""
+            echo "## Detalhes"
+            echo ""
+            echo '```'
+            echo "$REPORT"
+            echo '```'
+          } > "reports/health-${DATE}.md"
+
+          cat "reports/health-${DATE}.md" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload health report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: health-report-${{ github.run_number }}
+          path: reports/
+          retention-days: 90
+
+      - name: Alert on degraded status
+        if: steps.hc.outputs.status == 'DEGRADED'
+        run: |
+          echo '::error::NEXUS health check DEGRADED — ver relatório nos artefactos.'
+          exit 1

@@ -1,0 +1,72 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: '0 10 1 * *'  # Dia 1 de cada mês às 10:00 UTC
+  workflow_dispatch:
+
+jobs:
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Run security audit on VPS
+        id: sec
+        continue-on-error: true
+        run: |
+          REPORT=$(ssh -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/nexus/scripts/security_audit.sh 2>&1" || true)
+
+          DATE=$(date -u '+%Y-%m-%d')
+          DATETIME=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+          mkdir -p reports
+          {
+            echo "# NEXUS Security Audit — ${DATETIME}"
+            echo ""
+            echo "## Resultados"
+            echo ""
+            echo '```'
+            echo "$REPORT"
+            echo '```'
+          } > "reports/security-${DATE}.md"
+
+          cat "reports/security-${DATE}.md" >> $GITHUB_STEP_SUMMARY
+
+          echo "$REPORT" | grep -q "✘" && echo 'has_failures=true' >> $GITHUB_OUTPUT || echo 'has_failures=false' >> $GITHUB_OUTPUT
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report-${{ github.run_number }}
+          path: reports/
+          retention-days: 365
+
+      - name: Python dependency vulnerability check
+        run: |
+          pip install safety
+          safety check -r nexus/requirements.txt --output text 2>&1 || echo '::warning::safety encontrou vulnerabilidades em dependências Python.'
+        continue-on-error: true
+
+      - name: npm security audit
+        working-directory: nexus/dashboard/frontend
+        run: |
+          npm install --prefer-offline
+          npm audit --audit-level=high 2>&1 || echo '::warning::npm audit encontrou vulnerabilidades high/critical.'
+        continue-on-error: true
+
+      - name: Alert on VPS failures
+        if: steps.sec.outputs.has_failures == 'true'
+        run: |
+          echo '::warning::Security audit encontrou falhas críticas no VPS — ver relatório nos artefactos.'

@@ -1,0 +1,63 @@
+name: Static Analysis
+
+on:
+  push:
+    branches:
+      - claude/create-test-file-d1AY6
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ── Python: flake8 (blocking) + black + mypy (advisory) ───────────────────
+  python:
+    name: Python Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tools
+        run: pip install flake8 black mypy
+
+      - name: flake8
+        run: flake8 nexus/ --count --statistics
+
+      - name: black --check
+        run: black --check nexus/ 2>&1 || echo '::warning::black encontrou problemas de formatação. Corre "black nexus/" localmente.'
+        continue-on-error: true
+
+      - name: mypy
+        run: mypy nexus/ --ignore-missing-imports 2>&1 || echo '::warning::mypy reportou erros de tipo.'
+        continue-on-error: true
+
+  # ── Frontend: TypeScript + ESLint ──────────────────────────────────────────
+  frontend:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        working-directory: nexus/dashboard/frontend
+        run: npm install --prefer-offline
+
+      - name: TypeScript type-check
+        working-directory: nexus/dashboard/frontend
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        working-directory: nexus/dashboard/frontend
+        run: |
+          if ls eslint.config* .eslintrc* 2>/dev/null | grep -q .; then
+            npx eslint src/ --ext .ts,.tsx --max-warnings 10 || echo '::warning::ESLint encontrou problemas.'
+          else
+            echo 'Sem config ESLint — a saltar.'
+          fi
+        continue-on-error: true
