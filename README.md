@@ -166,7 +166,7 @@ Types: `daily`, `weekly`, `monthly`
 
 ---
 
-## Suporte e melhorias futuras 
+## Suporte e melhorias futuras
 
 Quando tiveres orçamento adicional:
 - Whisper API (transcrição de áudio real)
