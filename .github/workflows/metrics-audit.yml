@@ -1,0 +1,203 @@
+name: Metrics Audit
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      nexus_url:
+        description: 'NEXUS API base URL (default: http://localhost:8000)'
+        required: false
+        default: 'http://localhost:8000'
+
+env:
+  NEXUS_URL: ${{ github.event.inputs.nexus_url || 'http://localhost:8000' }}
+
+jobs:
+  metrics-audit:
+    name: Weekly Metrics Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: claude/create-test-file-d1AY6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -q requests
+
+      - name: Check NEXUS /metrics endpoint
+        id: nexus_metrics
+        run: |
+          python3 - <<'PYEOF'
+          import requests, sys, json
+          from datetime import datetime
+
+          url = "${{ env.NEXUS_URL }}/metrics"
+          print(f"Checking: {url}")
+
+          try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            lines = resp.text.strip().splitlines()
+            metric_lines = [l for l in lines if l and not l.startswith('#')]
+            help_lines  = [l for l in lines if l.startswith('# HELP')]
+            type_lines  = [l for l in lines if l.startswith('# TYPE')]
+            print(f"  Status: {resp.status_code} OK")
+            print(f"  Metrics exposed: {len(metric_lines)}")
+            print(f"  Help entries:    {len(help_lines)}")
+            print(f"  Type entries:    {len(type_lines)}")
+            print(f"  Content-Type:    {resp.headers.get('content-type', '?')}")
+
+            with open("metrics_snapshot.txt", "w") as f:
+              f.write(f"# NEXUS Metrics Snapshot — {datetime.utcnow().isoformat()}Z\n")
+              f.write(f"# Source: {url}\n\n")
+              f.write(resp.text)
+            print("  Snapshot saved: metrics_snapshot.txt")
+
+          except Exception as e:
+            print(f"  ERROR: {e}")
+            sys.exit(1)
+          PYEOF
+
+      - name: Parse and validate metric names
+        run: |
+          python3 - <<'PYEOF'
+          import re, sys
+
+          required = [
+            "nexus_cpu_percent",
+            "nexus_ram_percent",
+            "nexus_disk_percent",
+            "nexus_uptime_seconds",
+            "nexus_http_requests_total",
+            "nexus_http_errors_total",
+            "nexus_websocket_connections",
+          ]
+
+          try:
+            with open("metrics_snapshot.txt") as f:
+              content = f.read()
+          except FileNotFoundError:
+            print("SKIP: metrics_snapshot.txt not found (endpoint may be unreachable)")
+            sys.exit(0)
+
+          found = set()
+          for line in content.splitlines():
+            if line.startswith('#') or not line.strip():
+              continue
+            m = re.match(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)', line)
+            if m:
+              found.add(m.group(1))
+
+          missing = [r for r in required if r not in found]
+          print(f"Metrics found:   {len(found)}")
+          print(f"Required check:  {len(required)} metrics")
+
+          if missing:
+            print(f"MISSING metrics: {', '.join(missing)}")
+            sys.exit(1)
+          else:
+            print("All required metrics present")
+          PYEOF
+
+      - name: Generate metrics audit report
+        if: always()
+        run: |
+          python3 - <<'PYEOF'
+          import os, re, sys
+          from datetime import datetime
+
+          ts = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+          nexus_url = os.environ.get('NEXUS_URL', 'http://localhost:8000')
+
+          lines_by_name = {}
+          try:
+            with open("metrics_snapshot.txt") as f:
+              for line in f:
+                if line.startswith('#') or not line.strip():
+                  continue
+                m = re.match(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{.*?\})?\s+([\d.eE+\-]+)', line)
+                if m:
+                  lines_by_name.setdefault(m.group(1), []).append(m.group(2))
+          except FileNotFoundError:
+            pass
+
+          report = f"""# NEXUS Metrics Audit Report
+
+**Date:** {ts}  
+**Source:** {nexus_url}/metrics  
+**Total unique metrics:** {len(lines_by_name)}
+
+## Metric Values
+
+| Metric | Value(s) |
+|--------|----------|
+"""
+          for name in sorted(lines_by_name):
+            vals = ', '.join(lines_by_name[name][:3])
+            report += f"| `{name}` | {vals} |\n"
+
+          report += """
+
+## How to investigate
+
+- SSH tunnel to Prometheus: `ssh -L 9090:127.0.0.1:9090 user@server`
+- SSH tunnel to Grafana:    `ssh -L 3000:127.0.0.1:3000 user@server`
+- Query ad-hoc: `curl -s http://localhost:8000/metrics | grep nexus_cpu`
+"""
+
+          with open("metrics_audit_report.md", "w") as f:
+            f.write(report)
+          print("Report saved: metrics_audit_report.md")
+          PYEOF
+
+      - name: Upload metrics snapshot artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metrics-snapshot-${{ github.run_number }}
+          path: |
+            metrics_snapshot.txt
+            metrics_audit_report.md
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Check Prometheus service status (if self-hosted)
+        continue-on-error: true
+        run: |
+          if command -v systemctl &>/dev/null; then
+            echo "=== Prometheus ==="
+            systemctl is-active nexus-prometheus && echo "  active" || echo "  inactive"
+            echo "=== Node Exporter ==="
+            systemctl is-active nexus-node-exporter && echo "  active" || echo "  inactive"
+            echo "=== Grafana ==="
+            systemctl is-active grafana-server && echo "  active" || echo "  inactive"
+          else
+            echo "systemctl not available on this runner (expected on ubuntu-latest)"
+          fi
+
+      - name: Send alert on failure
+        if: failure()
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          NEXUS_HOME: /opt/nexus
+        run: |
+          if [[ -f nexus/scripts/alert.sh ]]; then
+            bash nexus/scripts/alert.sh ALERT_HEALTH_FAIL "Metrics Audit workflow FAILED on run #${{ github.run_number }}"
+          fi
