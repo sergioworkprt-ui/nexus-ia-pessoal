@@ -85,6 +85,10 @@ export const api = {
   securityStatus: () => req('/security/status'),
 
   metrics: () => req('/monitor/metrics'),
+  monitorStatus: () => req('/monitor/status'),
+  monitorHistory: (limit = 50) => req(`/monitor/history?limit=${limit}`),
+  autohealStatus: () => req('/monitor/autoheal'),
+  scaleStatus: () => req('/monitor/scale'),
 
   logs: (service: string, lines = 150) => req(`/logs/${service}?lines=${lines}`),
 

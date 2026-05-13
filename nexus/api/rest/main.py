@@ -1,5 +1,6 @@
 """NEXUS REST API — all endpoints."""
 from __future__ import annotations
+import json as _json
 import os
 from pathlib import Path
 from typing import Optional, Any
@@ -29,6 +30,9 @@ _bearer = HTTPBearer(auto_error=False)
 _nexus = None
 _LOG_DIR = Path(os.getenv("LOG_DIR", "/var/log/nexus"))
 _SETTINGS_PATH = Path("/data/nexus/settings.json")
+_NEXUS_HOME = Path(os.getenv("NEXUS_HOME", "/opt/nexus"))
+_MONITOR_DIR = _NEXUS_HOME / "monitor"
+_AUTOHEAL_STATE = _NEXUS_HOME / "autoheal_state.json"
 
 
 def set_nexus(n: Any):
@@ -56,7 +60,7 @@ def _mod(name: str):
     return m
 
 
-# ── Models ──────────────────────────────────────────────────────────────────────
+# ── Models ──────────────────────────────────────────────────────────────────────────
 class ChatReq(BaseModel):
     message: str
     mode: str = "normal"
@@ -101,7 +105,7 @@ class RealEnableReq(BaseModel):
     code: str
 
 
-# ── Health / Status ────────────────────────────────────────────────────────────
+# ── Health / Status ───────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok", "version": "2.0.0"}
@@ -126,7 +130,7 @@ def status():
     }
 
 
-# ── Chat ──────────────────────────────────────────────────────────────────────────
+# ── Chat ──────────────────────────────────────────────────────────────────────────────
 # /chat não exige auth para facilitar testes iniciais sem PIN.
 # Quando _nexus está disponível, usa o orchestrator. Caso contrário,
 # devolve uma resposta informativa em vez de 503.
@@ -147,7 +151,7 @@ async def chat(req: ChatReq):
     return {"response": await _nexus.process(req.message), "mode": req.mode, "nexus_ready": True}
 
 
-# ── Memory ──────────────────────────────────────────────────────────────────────
+# ── Memory ────────────────────────────────────────────────────────────────────────
 @app.get("/memory", dependencies=[Depends(_auth)])
 def get_memory(n: int = 50):
     m = _mod("memory")
@@ -162,7 +166,7 @@ def clear_memory():
     return {"status": "cleared"}
 
 
-# ── Tasks ──────────────────────────────────────────────────────────────────────────
+# ── Tasks ──────────────────────────────────────────────────────────────────────────────
 @app.get("/tasks", dependencies=[Depends(_auth)])
 def list_tasks(status: Optional[str] = None, type_: Optional[str] = None):
     tm = _mod("tasks")
@@ -191,7 +195,7 @@ def delete_task(tid: str):
     return {"status": "deleted"}
 
 
-# ── Learning ───────────────────────────────────────────────────────────────────────
+# ── Learning ───────────────────────────────────────────────────────────────────────────
 @app.post("/learning/multi", dependencies=[Depends(_auth)])
 async def learning_multi(req: LearningReq):
     lm = _mod("learning")
@@ -210,14 +214,14 @@ def learning_providers():
     return {"providers": lm.available_providers()}
 
 
-# ── Video Analysis ────────────────────────────────────────────────────────────────
+# ── Video Analysis ────────────────────────────────────────────────────────────────────
 @app.post("/video/analyze", dependencies=[Depends(_auth)])
 async def video_analyze(req: VideoReq):
     va = _mod("video_analysis")
     return await va.analyze(req.url, req.mode)
 
 
-# ── Evolution ──────────────────────────────────────────────────────────────────────
+# ── Evolution ──────────────────────────────────────────────────────────────────────────────
 @app.post("/evolution/propose", dependencies=[Depends(_auth)])
 async def evolution_propose(req: EvolveReq):
     ev = _mod("evolution")
@@ -252,14 +256,14 @@ async def evolution_apply(pid: str):
     return await ev.apply(pid)
 
 
-# ── Truth Checker ────────────────────────────────────────────────────────────────
+# ── Truth Checker ──────────────────────────────────────────────────────────────────────
 @app.post("/truth/check", dependencies=[Depends(_auth)])
 async def truth_check(req: TruthReq):
     tc = _mod("truth_checker")
     return await tc.check(req.claim)
 
 
-# ── Trading — XTB ─────────────────────────────────────────────────────────────
+# ── Trading — XTB ──────────────────────────────────────────────────────────────────
 @app.get("/trading/xtb/status", dependencies=[Depends(_auth)])
 def xtb_status():
     return _mod("xtb").status()
@@ -286,7 +290,7 @@ async def xtb_order(req: OrderReqXTB):
     return await xtb.place_order(req.symbol, req.cmd, req.volume, req.sl, req.tp, req.price)
 
 
-# ── Trading — IBKR ─────────────────────────────────────────────────────────────
+# ── Trading — IBKR ──────────────────────────────────────────────────────────────────
 @app.get("/trading/ibkr/status", dependencies=[Depends(_auth)])
 def ibkr_status():
     return _mod("ibkr").status()
@@ -324,7 +328,7 @@ def enable_real(req: RealEnableReq):
     return {"authorized": ok, "warning": "Real money at risk" if ok else "Invalid code"}
 
 
-# ── Security ──────────────────────────────────────────────────────────────────────
+# ── Security ────────────────────────────────────────────────────────────────────────────
 @app.post("/security/pin/verify")
 def pin_verify(req: PinReq):
     sec = _mod("security")
@@ -347,7 +351,7 @@ def security_status():
     return _mod("security").status()
 
 
-# ── Monitor ──────────────────────────────────────────────────────────────────────
+# ── Monitor ────────────────────────────────────────────────────────────────────────────
 @app.get("/monitor/metrics", dependencies=[Depends(_auth)])
 def monitor_metrics():
     try:
@@ -366,7 +370,69 @@ def monitor_metrics():
         return {"error": str(e)}
 
 
-# ── Logs ──────────────────────────────────────────────────────────────────────────
+@app.get("/monitor/status")
+def monitor_status():
+    """Current system snapshot collected by monitor_collect.sh."""
+    current_file = _MONITOR_DIR / "current.json"
+    if not current_file.exists():
+        return {"error": "No monitor data yet", "hint": "Run scripts/monitor_collect.sh on VPS"}
+    try:
+        return _json.loads(current_file.read_text())
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/monitor/history")
+def monitor_history(limit: int = 50):
+    """Last N monitor snapshots from JSONL history."""
+    history_file = _MONITOR_DIR / "history.jsonl"
+    if not history_file.exists():
+        return {"history": [], "count": 0}
+    try:
+        lines = [l for l in history_file.read_text().splitlines() if l.strip()]
+        entries = [_json.loads(l) for l in lines]
+        limited = entries[-limit:]
+        return {"history": limited, "count": len(limited)}
+    except Exception as e:
+        return {"history": [], "error": str(e)}
+
+
+@app.get("/monitor/autoheal")
+def monitor_autoheal():
+    """Autoheal state: consecutive failures and last action."""
+    if not _AUTOHEAL_STATE.exists():
+        return {"consecutive_failures": 0, "last_action": "none", "last_check": None, "max_failures": 3}
+    try:
+        data = _json.loads(_AUTOHEAL_STATE.read_text())
+        data.setdefault("max_failures", 3)
+        return data
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/monitor/scale")
+def monitor_scale():
+    """Latest load advisor data from load_monitor.sh."""
+    load_history = _MONITOR_DIR / "load_history.jsonl"
+    load_report = _MONITOR_DIR / "load_report.md"
+    history: list = []
+    if load_history.exists():
+        try:
+            lines = [l for l in load_history.read_text().splitlines() if l.strip()]
+            history = [_json.loads(l) for l in lines]
+        except Exception:
+            pass
+    report = load_report.read_text() if load_report.exists() else "No scaling report yet"
+    latest = history[-1] if history else None
+    return {
+        "latest": latest,
+        "history_count": len(history),
+        "report": report,
+        "recommendations": latest.get("recommendations", []) if latest else [],
+    }
+
+
+# ── Logs ────────────────────────────────────────────────────────────────────────────────
 @app.get("/logs/{service}", dependencies=[Depends(_auth)])
 def get_logs(service: str, lines: int = 100):
     allowed = {"api", "core", "dashboard", "audit"}
@@ -379,32 +445,30 @@ def get_logs(service: str, lines: int = 100):
     return {"lines": all_lines[-lines:], "total": len(all_lines)}
 
 
-# ── Settings ──────────────────────────────────────────────────────────────────────
+# ── Settings ────────────────────────────────────────────────────────────────────────────
 @app.get("/settings", dependencies=[Depends(_auth)])
 def get_settings():
-    import json
     try:
-        return json.loads(_SETTINGS_PATH.read_text()) if _SETTINGS_PATH.exists() else {}
+        return _json.loads(_SETTINGS_PATH.read_text()) if _SETTINGS_PATH.exists() else {}
     except Exception:
         return {}
 
 
 @app.put("/settings", dependencies=[Depends(_auth)])
 def update_settings(body: dict):
-    import json
     _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     existing = {}
     try:
         if _SETTINGS_PATH.exists():
-            existing = json.loads(_SETTINGS_PATH.read_text())
+            existing = _json.loads(_SETTINGS_PATH.read_text())
     except Exception:
         pass
     existing.update(body)
-    _SETTINGS_PATH.write_text(json.dumps(existing, indent=2))
+    _SETTINGS_PATH.write_text(_json.dumps(existing, indent=2))
     return {"status": "saved", "settings": existing}
 
 
-# ── Legacy trading (backwards compat) ──────────────────────────────────────────────
+# ── Legacy trading (backwards compat) ────────────────────────────────────────────────────
 @app.get("/positions", dependencies=[Depends(_auth)])
 async def legacy_positions():
     t = _nexus.get("trading") if _nexus else None
@@ -413,7 +477,7 @@ async def legacy_positions():
     return {"orders": t.get_orders() if hasattr(t, 'get_orders') else []}
 
 
-# ── WebSocket ──────────────────────────────────────────────────────────────────────
+# ── WebSocket ────────────────────────────────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws_endpoint(ws, _nexus)
