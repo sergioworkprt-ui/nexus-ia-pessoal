@@ -1,0 +1,83 @@
+name: Disaster Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type CONFIRM to proceed with disaster recovery'
+        required: true
+        default: ''
+      reason:
+        description: 'Reason for DR (e.g. VPS crash, corrupted data)'
+        required: true
+        default: ''
+
+jobs:
+  validate:
+    name: Validate Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CONFIRM input
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "CONFIRM" ]; then
+            echo "::error::You must type exactly CONFIRM to proceed with disaster recovery."
+            exit 1
+          fi
+          if [ -z "${{ github.event.inputs.reason }}" ]; then
+            echo "::error::A reason must be provided."
+            exit 1
+          fi
+          echo "Confirmation accepted."
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          echo "Actor: ${{ github.actor }}"
+
+  disaster-recovery:
+    name: Execute Disaster Recovery
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Execute DR on VPS
+        id: dr
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/scripts/disaster_recovery.sh 2>&1" | tee /tmp/dr_output.txt
+        continue-on-error: true
+
+      - name: Download DR report from VPS
+        if: always()
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "ls -t /tmp/nexus_dr_report_*.md 2>/dev/null | head -1 | xargs cat 2>/dev/null || echo 'No report generated'" \
+            > /tmp/dr_report.md || echo 'Could not download report' > /tmp/dr_report.md
+
+      - name: Upload DR report artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: disaster-recovery-report-${{ github.run_number }}
+          path: /tmp/dr_report.md
+          retention-days: 365
+
+      - name: Summary
+        if: always()
+        run: |
+          echo '## Disaster Recovery' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo "- **Reason**: ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run**: #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Outcome**: ${{ steps.dr.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '### DR Output (last 30 lines)' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -30 /tmp/dr_output.txt 2>/dev/null >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo "Full report: artifact **disaster-recovery-report-${{ github.run_number }}**" >> $GITHUB_STEP_SUMMARY
