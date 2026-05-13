@@ -2,10 +2,11 @@
 from __future__ import annotations
 import json as _json
 import os
+import time as _time
 from pathlib import Path
 from typing import Optional, Any
 import psutil
-from fastapi import FastAPI, HTTPException, Depends, WebSocket
+from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -15,8 +16,7 @@ from nexus.services.logger.logger import get_logger
 log = get_logger("api")
 app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs")
 
-# CORS: permite qualquer origem (o browser faz preflight OPTIONS antes de POST/PUT).
-# Não usar allow_credentials=True com allow_origins=["*"] — é inválido no CORS spec.
+# CORS: permite qualquer origem — não usar allow_credentials=True com allow_origins=["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,6 +26,31 @@ app.add_middleware(
     max_age=3600,
 )
 
+# ── HTTP middleware: Prometheus counters + structured log ─────────────────────────────────
+try:
+    from nexus.api.rest import prometheus_metrics as _prom
+    from nexus.services.logger.structured import http_logging_middleware
+
+    @app.middleware("http")
+    async def _http_mw(request: Request, call_next):
+        return await http_logging_middleware(request, call_next, record_fn=_prom.record_request)
+except Exception as _e:
+    log.warning("Metrics/logging middleware unavailable: %s", _e)
+
+# ── Extra routers ──────────────────────────────────────────────────────────────────────────
+try:
+    from nexus.api.rest.automation import router as _automation_router
+    app.include_router(_automation_router)
+except Exception as _e:
+    log.warning("Automation API unavailable: %s", _e)
+
+try:
+    from nexus.api.rest.prometheus_metrics import router as _prom_router
+    app.include_router(_prom_router)
+except Exception as _e:
+    log.warning("Prometheus router unavailable: %s", _e)
+
+# ── Internal vars ──────────────────────────────────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
 _nexus = None
 _LOG_DIR = Path(os.getenv("LOG_DIR", "/var/log/nexus"))
@@ -131,9 +156,6 @@ def status():
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────────────
-# /chat não exige auth para facilitar testes iniciais sem PIN.
-# Quando _nexus está disponível, usa o orchestrator. Caso contrário,
-# devolve uma resposta informativa em vez de 503.
 @app.post("/chat")
 async def chat(req: ChatReq):
     if not _nexus:
@@ -141,11 +163,10 @@ async def chat(req: ChatReq):
             "response": (
                 f"Olá! Recebi a tua mensagem: “{req.message}” — "
                 "mas o orquestrador NEXUS não está activo neste momento. "
-                "O chat completo requer o nexus-core ou nexus-backend em execução. "
+                "O chat completo requer o nexus-core em execução. "
                 "Verifica: systemctl status nexus-core"
             ),
-            "mode": req.mode,
-            "nexus_ready": False,
+            "mode": req.mode, "nexus_ready": False,
         }
     _nexus.update_context("chat_mode", req.mode)
     return {"response": await _nexus.process(req.message), "mode": req.mode, "nexus_ready": True}
@@ -154,8 +175,7 @@ async def chat(req: ChatReq):
 # ── Memory ────────────────────────────────────────────────────────────────────────
 @app.get("/memory", dependencies=[Depends(_auth)])
 def get_memory(n: int = 50):
-    m = _mod("memory")
-    return {"entries": m.get_recent(n)}
+    return {"entries": _mod("memory").get_recent(n)}
 
 
 @app.delete("/memory", dependencies=[Depends(_auth)])
@@ -169,28 +189,21 @@ def clear_memory():
 # ── Tasks ──────────────────────────────────────────────────────────────────────────────
 @app.get("/tasks", dependencies=[Depends(_auth)])
 def list_tasks(status: Optional[str] = None, type_: Optional[str] = None):
-    tm = _mod("tasks")
-    return {"tasks": tm.list_tasks(status=status, type_=type_)}
-
+    return {"tasks": _mod("tasks").list_tasks(status=status, type_=type_)}
 
 @app.post("/tasks", dependencies=[Depends(_auth)])
 def create_task(req: TaskReq):
-    tm = _mod("tasks")
-    return tm.create(req.title, req.type_, req.payload, req.needs_approval)
-
+    return _mod("tasks").create(req.title, req.type_, req.payload, req.needs_approval)
 
 @app.post("/tasks/{tid}/approve", dependencies=[Depends(_auth)])
 def approve_task(tid: str):
-    tm = _mod("tasks")
-    if not tm.approve(tid):
+    if not _mod("tasks").approve(tid):
         raise HTTPException(404, "Task not found")
     return {"status": "approved"}
 
-
 @app.delete("/tasks/{tid}", dependencies=[Depends(_auth)])
 def delete_task(tid: str):
-    tm = _mod("tasks")
-    if not tm.delete(tid):
+    if not _mod("tasks").delete(tid):
         raise HTTPException(404, "Task not found")
     return {"status": "deleted"}
 
@@ -198,124 +211,87 @@ def delete_task(tid: str):
 # ── Learning ───────────────────────────────────────────────────────────────────────────
 @app.post("/learning/multi", dependencies=[Depends(_auth)])
 async def learning_multi(req: LearningReq):
-    lm = _mod("learning")
-    return {"answers": await lm.multi_query(req.question)}
-
+    return {"answers": await _mod("learning").multi_query(req.question)}
 
 @app.post("/learning/synthesize", dependencies=[Depends(_auth)])
 async def learning_synthesize(req: LearningReq):
-    lm = _mod("learning")
-    return await lm.synthesize(req.question)
-
+    return await _mod("learning").synthesize(req.question)
 
 @app.get("/learning/providers", dependencies=[Depends(_auth)])
 def learning_providers():
-    lm = _mod("learning")
-    return {"providers": lm.available_providers()}
+    return {"providers": _mod("learning").available_providers()}
 
 
 # ── Video Analysis ────────────────────────────────────────────────────────────────────
 @app.post("/video/analyze", dependencies=[Depends(_auth)])
 async def video_analyze(req: VideoReq):
-    va = _mod("video_analysis")
-    return await va.analyze(req.url, req.mode)
+    return await _mod("video_analysis").analyze(req.url, req.mode)
 
 
 # ── Evolution ──────────────────────────────────────────────────────────────────────────────
 @app.post("/evolution/propose", dependencies=[Depends(_auth)])
 async def evolution_propose(req: EvolveReq):
-    ev = _mod("evolution")
-    return await ev.propose(req.description, req.target_file)
-
+    return await _mod("evolution").propose(req.description, req.target_file)
 
 @app.get("/evolution", dependencies=[Depends(_auth)])
 def evolution_list(status: Optional[str] = None):
-    ev = _mod("evolution")
-    return {"proposals": ev.list_proposals(status)}
-
+    return {"proposals": _mod("evolution").list_proposals(status)}
 
 @app.post("/evolution/{pid}/approve", dependencies=[Depends(_auth)])
 def evolution_approve(pid: str):
-    ev = _mod("evolution")
-    if not ev.approve(pid):
+    if not _mod("evolution").approve(pid):
         raise HTTPException(404, "Proposal not found")
     return {"status": "approved"}
 
-
 @app.post("/evolution/{pid}/reject", dependencies=[Depends(_auth)])
 def evolution_reject(pid: str):
-    ev = _mod("evolution")
-    if not ev.reject(pid):
+    if not _mod("evolution").reject(pid):
         raise HTTPException(404, "Proposal not found")
     return {"status": "rejected"}
 
-
 @app.post("/evolution/{pid}/apply", dependencies=[Depends(_auth)])
 async def evolution_apply(pid: str):
-    ev = _mod("evolution")
-    return await ev.apply(pid)
+    return await _mod("evolution").apply(pid)
 
 
 # ── Truth Checker ──────────────────────────────────────────────────────────────────────
 @app.post("/truth/check", dependencies=[Depends(_auth)])
 async def truth_check(req: TruthReq):
-    tc = _mod("truth_checker")
-    return await tc.check(req.claim)
+    return await _mod("truth_checker").check(req.claim)
 
 
 # ── Trading — XTB ──────────────────────────────────────────────────────────────────
 @app.get("/trading/xtb/status", dependencies=[Depends(_auth)])
-def xtb_status():
-    return _mod("xtb").status()
-
+def xtb_status(): return _mod("xtb").status()
 
 @app.get("/trading/xtb/positions", dependencies=[Depends(_auth)])
-async def xtb_positions():
-    xtb = _mod("xtb")
-    return {"positions": await xtb.get_positions()}
-
+async def xtb_positions(): return {"positions": await _mod("xtb").get_positions()}
 
 @app.get("/trading/xtb/balance", dependencies=[Depends(_auth)])
-async def xtb_balance():
-    xtb = _mod("xtb")
-    return await xtb.get_balance()
-
+async def xtb_balance(): return await _mod("xtb").get_balance()
 
 @app.post("/trading/xtb/order", dependencies=[Depends(_auth)])
 async def xtb_order(req: OrderReqXTB):
-    sec = _mod("security")
-    if not sec.validate_financial(req.volume * 100):
+    if not _mod("security").validate_financial(req.volume * 100):
         raise HTTPException(403, "Financial action not authorized")
-    xtb = _mod("xtb")
-    return await xtb.place_order(req.symbol, req.cmd, req.volume, req.sl, req.tp, req.price)
+    return await _mod("xtb").place_order(req.symbol, req.cmd, req.volume, req.sl, req.tp, req.price)
 
 
 # ── Trading — IBKR ──────────────────────────────────────────────────────────────────
 @app.get("/trading/ibkr/status", dependencies=[Depends(_auth)])
-def ibkr_status():
-    return _mod("ibkr").status()
-
+def ibkr_status(): return _mod("ibkr").status()
 
 @app.get("/trading/ibkr/positions", dependencies=[Depends(_auth)])
-async def ibkr_positions():
-    ibkr = _mod("ibkr")
-    return {"positions": await ibkr.get_positions()}
-
+async def ibkr_positions(): return {"positions": await _mod("ibkr").get_positions()}
 
 @app.get("/trading/ibkr/account", dependencies=[Depends(_auth)])
-async def ibkr_account():
-    ibkr = _mod("ibkr")
-    return await ibkr.get_account_summary()
-
+async def ibkr_account(): return await _mod("ibkr").get_account_summary()
 
 @app.post("/trading/ibkr/order", dependencies=[Depends(_auth)])
 async def ibkr_order(req: OrderReqIBKR):
-    sec = _mod("security")
-    if not sec.validate_financial(req.quantity * 10):
+    if not _mod("security").validate_financial(req.quantity * 10):
         raise HTTPException(403, "Financial action not authorized")
-    ibkr = _mod("ibkr")
-    return await ibkr.place_order(req.symbol, req.action, req.quantity)
-
+    return await _mod("ibkr").place_order(req.symbol, req.action, req.quantity)
 
 @app.post("/trade/real/enable", dependencies=[Depends(_auth)])
 def enable_real(req: RealEnableReq):
@@ -335,16 +311,12 @@ def pin_verify(req: PinReq):
     if not sec.check_rate("pin", limit=5, window=60):
         raise HTTPException(429, "Too many PIN attempts")
     if sec.verify_pin(req.pin):
-        token = sec.generate_token()
-        return {"ok": True, "token": token}
+        return {"ok": True, "token": sec.generate_token()}
     return {"ok": False}
-
 
 @app.get("/security/audit", dependencies=[Depends(_auth)])
 def security_audit(lines: int = 50):
-    sec = _mod("security")
-    return {"lines": sec.get_audit_log(lines)}
-
+    return {"lines": _mod("security").get_audit_log(lines)}
 
 @app.get("/security/status", dependencies=[Depends(_auth)])
 def security_status():
@@ -358,21 +330,16 @@ def monitor_metrics():
         cpu = psutil.cpu_percent(interval=0.1)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
-        return {
-            "cpu_percent": cpu,
-            "memory_percent": mem.percent,
-            "memory_used_mb": mem.used // 1024 // 1024,
-            "memory_total_mb": mem.total // 1024 // 1024,
-            "disk_percent": disk.percent,
-            "disk_free_gb": disk.free // 1024 // 1024 // 1024,
-        }
+        return {"cpu_percent": cpu, "memory_percent": mem.percent,
+                "memory_used_mb": mem.used // 1024 // 1024,
+                "memory_total_mb": mem.total // 1024 // 1024,
+                "disk_percent": disk.percent,
+                "disk_free_gb": disk.free // 1024 // 1024 // 1024}
     except Exception as e:
         return {"error": str(e)}
 
-
 @app.get("/monitor/status")
 def monitor_status():
-    """Current system snapshot collected by monitor_collect.sh."""
     current_file = _MONITOR_DIR / "current.json"
     if not current_file.exists():
         return {"error": "No monitor data yet", "hint": "Run scripts/monitor_collect.sh on VPS"}
@@ -381,10 +348,8 @@ def monitor_status():
     except Exception as e:
         return {"error": str(e)}
 
-
 @app.get("/monitor/history")
 def monitor_history(limit: int = 50):
-    """Last N monitor snapshots from JSONL history."""
     history_file = _MONITOR_DIR / "history.jsonl"
     if not history_file.exists():
         return {"history": [], "count": 0}
@@ -396,10 +361,8 @@ def monitor_history(limit: int = 50):
     except Exception as e:
         return {"history": [], "error": str(e)}
 
-
 @app.get("/monitor/autoheal")
 def monitor_autoheal():
-    """Autoheal state: consecutive failures and last action."""
     if not _AUTOHEAL_STATE.exists():
         return {"consecutive_failures": 0, "last_action": "none", "last_check": None, "max_failures": 3}
     try:
@@ -409,10 +372,8 @@ def monitor_autoheal():
     except Exception as e:
         return {"error": str(e)}
 
-
 @app.get("/monitor/scale")
 def monitor_scale():
-    """Latest load advisor data from load_monitor.sh."""
     load_history = _MONITOR_DIR / "load_history.jsonl"
     load_report = _MONITOR_DIR / "load_report.md"
     history: list = []
@@ -424,12 +385,8 @@ def monitor_scale():
             pass
     report = load_report.read_text() if load_report.exists() else "No scaling report yet"
     latest = history[-1] if history else None
-    return {
-        "latest": latest,
-        "history_count": len(history),
-        "report": report,
-        "recommendations": latest.get("recommendations", []) if latest else [],
-    }
+    return {"latest": latest, "history_count": len(history), "report": report,
+            "recommendations": latest.get("recommendations", []) if latest else []}
 
 
 # ── Logs ────────────────────────────────────────────────────────────────────────────────
@@ -453,7 +410,6 @@ def get_settings():
     except Exception:
         return {}
 
-
 @app.put("/settings", dependencies=[Depends(_auth)])
 def update_settings(body: dict):
     _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -468,7 +424,7 @@ def update_settings(body: dict):
     return {"status": "saved", "settings": existing}
 
 
-# ── Legacy trading (backwards compat) ────────────────────────────────────────────────────
+# ── Legacy ──────────────────────────────────────────────────────────────────────────────────
 @app.get("/positions", dependencies=[Depends(_auth)])
 async def legacy_positions():
     t = _nexus.get("trading") if _nexus else None
