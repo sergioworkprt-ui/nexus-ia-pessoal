@@ -1,0 +1,42 @@
+name: Alert Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Custom test message'
+        required: false
+        default: 'Manual alert test from GitHub Actions'
+
+jobs:
+  alert-test:
+    name: Alert Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Send test alert on VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/scripts/alert.sh TEST '${{ github.event.inputs.message }}'"
+
+      - name: Show alert log
+        if: always()
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "echo '=== Recent Alert Log ===' && tail -20 /opt/nexus/logs/alerts.log 2>/dev/null || echo 'No alert log yet'"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo '## Alert Test' >> $GITHUB_STEP_SUMMARY
+          echo "- **Type**: TEST" >> $GITHUB_STEP_SUMMARY
+          echo "- **Message**: ${{ github.event.inputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check logs on VPS: \`tail -20 /opt/nexus/logs/alerts.log\`" >> $GITHUB_STEP_SUMMARY

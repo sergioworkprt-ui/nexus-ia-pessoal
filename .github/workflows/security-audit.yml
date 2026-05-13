@@ -66,6 +66,12 @@ jobs:
           npm audit --audit-level=high 2>&1 || echo '::warning::npm audit encontrou vulnerabilidades high/critical.'
         continue-on-error: true
 
+      - name: Send security failure alert
+        if: steps.sec.outputs.has_failures == 'true'
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/scripts/alert.sh ALERT_SECURITY_FAIL 'Security audit found critical issues — run #${{ github.run_number }}'" || true
+
       - name: Alert on VPS failures
         if: steps.sec.outputs.has_failures == 'true'
         run: |

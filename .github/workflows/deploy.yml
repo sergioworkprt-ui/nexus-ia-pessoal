@@ -6,7 +6,7 @@ on:
       - claude/create-test-file-d1AY6
 
 jobs:
-  # ── 1. Testes ───────────────────────────────────────────────────────────────
+  # ── 1. Testes ───────────────────────────────────────────────────────────────────────
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -37,7 +37,7 @@ jobs:
         working-directory: nexus/dashboard/frontend
         run: npx tsc --noEmit
 
-  # ── 2. Deploy ────────────────────────────────────────────────────────────────
+  # ── 2. Deploy ────────────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -78,7 +78,7 @@ jobs:
           echo "| Deploy | ${{ steps.deploy.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Health | ${{ steps.health.outcome }} |" >> $GITHUB_STEP_SUMMARY
 
-  # ── 3. Auto-rollback (só se deploy falhar) ───────────────────────────────────
+  # ── 3. Auto-rollback + alert (só se deploy falhar) ────────────────────────────────────
   rollback:
     name: Auto-rollback
     runs-on: ubuntu-latest
@@ -97,8 +97,15 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "bash /opt/nexus/nexus/scripts/rollback.sh auto 1"
 
+      - name: Send deploy failure alert
+        if: always()
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/scripts/alert.sh ALERT_DEPLOY_FAIL 'Commit ${{ github.sha }} — deploy failed, auto-rollback triggered (run #${{ github.run_number }})'" || true
+
       - name: Rollback summary
         if: always()
         run: |
           echo '## Auto-Rollback Triggered' >> $GITHUB_STEP_SUMMARY
           echo 'Deploy falhou — VPS revertido para o commit anterior.' >> $GITHUB_STEP_SUMMARY
+          echo 'Alert enviado via canais configurados.' >> $GITHUB_STEP_SUMMARY

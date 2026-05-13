@@ -10,26 +10,27 @@ jobs:
     name: Daily Backup
     runs-on: ubuntu-latest
     steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
       - name: Run backup on VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/nexus
-            bash scripts/backup.sh
-            bash scripts/backup_remote.sh 2>/dev/null || echo "Remote backup skipped (not configured)"
+        id: backup
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "set -e; cd /opt/nexus && bash scripts/backup.sh && bash scripts/backup_remote.sh 2>/dev/null || echo 'Remote backup skipped (not configured)'"
 
       - name: Report backup status
         if: always()
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            echo "=== Backup Summary ==="
-            ls -lh /opt/nexus/backups/ 2>/dev/null || echo "No backups directory"
-            tail -5 /opt/nexus/logs/backup.log 2>/dev/null || echo "No backup log"
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "echo '=== Backup Summary ===' && ls -lh /opt/nexus/backups/ 2>/dev/null || echo 'No backups directory'; tail -5 /opt/nexus/logs/backup.log 2>/dev/null || echo 'No backup log'"
+
+      - name: Send backup failure alert
+        if: failure()
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/scripts/alert.sh ALERT_BACKUP_FAIL 'Daily backup failed — run #${{ github.run_number }}'" || true

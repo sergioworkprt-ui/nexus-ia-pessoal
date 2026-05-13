@@ -26,7 +26,6 @@ jobs:
           REPORT=$(ssh -o StrictHostKeyChecking=no \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "bash /opt/nexus/nexus/scripts/health_check.sh 2>&1" || true)
-          HC_EXIT=${PIPESTATUS[0]:-0}
 
           STATUS="OK"
           echo "$REPORT" | grep -qE "FALHAS|FAIL|FECHADA|INACTIVE" && STATUS="DEGRADED"
@@ -60,6 +59,12 @@ jobs:
           name: health-report-${{ github.run_number }}
           path: reports/
           retention-days: 90
+
+      - name: Send health failure alert
+        if: steps.hc.outputs.status == 'DEGRADED'
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/scripts/alert.sh ALERT_HEALTH_FAIL 'Weekly health audit DEGRADED — run #${{ github.run_number }}'" || true
 
       - name: Alert on degraded status
         if: steps.hc.outputs.status == 'DEGRADED'

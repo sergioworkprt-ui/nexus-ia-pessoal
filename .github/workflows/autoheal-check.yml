@@ -10,24 +10,27 @@ jobs:
     name: Autoheal Check
     runs-on: ubuntu-latest
     steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
       - name: Run autoheal on VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/nexus
-            bash scripts/autoheal.sh 2>&1 | tail -20
+        id: autoheal
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "cd /opt/nexus && bash scripts/autoheal.sh 2>&1 | tail -20"
 
       - name: Collect monitor snapshot
         if: always()
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd /opt/nexus
-            bash scripts/monitor_collect.sh 2>&1 | tail -5
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "cd /opt/nexus && bash scripts/monitor_collect.sh 2>&1 | tail -5" || true
+
+      - name: Send autoheal alert
+        if: failure()
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "bash /opt/nexus/scripts/alert.sh ALERT_AUTOHEAL_TRIGGERED 'Autoheal could not recover services after max failures — run #${{ github.run_number }}'" || true
