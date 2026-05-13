@@ -28,7 +28,7 @@ nexus-pro/
 
 ---
 
-## Variáveis de ambiente (Render → Environment)
+## Variáveis de ambiente (Render → Environment) 
 
 | Variável | Obrigatória | Descrição |
 |---|---|---|
