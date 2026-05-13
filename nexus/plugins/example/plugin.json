@@ -1,0 +1,8 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "author": "NEXUS",
+  "description": "Example plugin demonstrating the NEXUS plugin API",
+  "entrypoint": "plugin.py",
+  "hooks": ["on_chat", "on_startup"]
+}
