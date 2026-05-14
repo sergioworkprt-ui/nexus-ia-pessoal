@@ -2,12 +2,13 @@
 # nexus_master_fix.sh — Reparação completa do NEXUS no VPS
 # Uso: sudo bash /opt/nexus/nexus/scripts/nexus_master_fix.sh
 #
-# ARQUITECTURA CORRECRA:
-#   Porta 8000 — nexus-core   : REST API (uvicorn nexus.main)
-#   Porta 8801 — nexus-ws     : WebSocket standalone (ws_server.py)
+# ARQUITECTURA CORRECTA:
+#   Porta 8000 — nexus-core      : REST API (uvicorn nexus.api.rest.main:app)
+#   Porta 8801 — nexus-ws        : WebSocket standalone (ws_server.py)
 #   Porta 9000 — nexus-dashboard : dashboard React
 #
 # nexus-api foi REMOVIDO (conflito de porta 8000 com nexus-core)
+# nexus/main.py NÃO é usado como entry point — o uvicorn corre directamente
 set -uo pipefail
 
 NEXUS_HOME="/opt/nexus"
@@ -123,15 +124,20 @@ done
 # ─── STEP 6: Corrigir ficheiros de serviço systemd ─────────────────────────
 info "[6/10] A corrigir serviços systemd..."
 
-# Determinar Python a usar (venv preferido)
+# Determinar Python e Uvicorn a usar (venv preferido)
 if [[ -f "$VENV/bin/python" ]]; then
-    PYTHON="$VENV/bin/python"
-elif [[ -f "$VENV/bin/uvicorn" ]]; then
     PYTHON="$VENV/bin/python"
 else
     PYTHON=$(command -v python3 || echo python3)
 fi
 ok "  Python: $PYTHON"
+
+if [[ -f "$VENV/bin/uvicorn" ]]; then
+    UVICORN="$VENV/bin/uvicorn"
+else
+    UVICORN=$(command -v uvicorn 2>/dev/null || echo "uvicorn")
+fi
+ok "  Uvicorn: $UVICORN"
 
 # Determinar utilizador do serviço
 SVC_USER="nexus"
@@ -146,6 +152,8 @@ if systemctl is-enabled --quiet nexus-api 2>/dev/null; then
     rm -f "$SVC_DIR/nexus-api.service"
     ok "  nexus-api: DESACTIVADO e ficheiro removido"
 else
+    # Remover ficheiro mesmo que não esteja enabled
+    rm -f "$SVC_DIR/nexus-api.service" 2>/dev/null || true
     ok "  nexus-api: já não estava activo"
 fi
 
@@ -155,13 +163,18 @@ if systemctl is-enabled --quiet nexus-backend 2>/dev/null; then
     rm -f "$SVC_DIR/nexus-backend.service"
     ok "  nexus-backend: DESACTIVADO e ficheiro removido"
 else
+    rm -f "$SVC_DIR/nexus-backend.service" 2>/dev/null || true
     ok "  nexus-backend: já não estava activo"
 fi
 
 # 6c. Criar/actualizar nexus-core.service (REST API em 8000)
+# IMPORTANTE: usar uvicorn directamente — NÃO usar 'python -m nexus.main'
+# Razão: nexus/main.py lança uma thread WS com asyncio.set_event_loop() que
+# interfere com o event loop do uvicorn, impedindo-o de abrir a porta 8000.
+# O WS é agora responsabilidade exclusiva do nexus-ws.service.
 cat > "$SVC_DIR/nexus-core.service" <<SVC_CORE
 [Unit]
-Description=NEXUS AI — Core (REST API porta 8000 + WS thread 8801)
+Description=NEXUS AI — REST API (porta 8000)
 After=network-online.target
 Wants=network-online.target
 
@@ -173,7 +186,7 @@ WorkingDirectory=$NEXUS_HOME
 EnvironmentFile=-$ENV_FILE
 Environment=PYTHONPATH=$NEXUS_HOME
 Environment=LOG_DIR=/var/log/nexus
-ExecStart=$PYTHON -m nexus.main
+ExecStart=$UVICORN nexus.api.rest.main:app --host 0.0.0.0 --port 8000 --log-level info
 Restart=always
 RestartSec=10
 StartLimitIntervalSec=0
@@ -184,7 +197,7 @@ SyslogIdentifier=nexus-core
 [Install]
 WantedBy=multi-user.target
 SVC_CORE
-ok "  nexus-core.service: actualizado"
+ok "  nexus-core.service: actualizado (uvicorn directo em :8000)"
 
 # 6d. Criar/actualizar nexus-ws.service (WebSocket standalone porta 8801)
 cat > "$SVC_DIR/nexus-ws.service" <<SVC_WS
@@ -226,7 +239,7 @@ done
 # ─── STEP 7: Iniciar serviços ───────────────────────────────────────────
 info "[7/10] A iniciar serviços..."
 
-# Iniciar nexus-ws PRIMEIRO (ocupa porta 8801 antes do nexus-core tentar)
+# Iniciar nexus-ws PRIMEIRO (porta 8801 — standalone, sem dependência do core)
 systemctl start nexus-ws 2>/dev/null && sleep 2 || true
 if systemctl is-active --quiet nexus-ws; then
     ok "  nexus-ws: ACTIVE (ws://0.0.0.0:8801)"
@@ -235,14 +248,14 @@ else
     journalctl -u nexus-ws -n 15 --no-pager 2>/dev/null | tail -10 | tee -a "$LOG_FILE" || true
 fi
 
-# Depois nexus-core (API + WS thread como fallback)
+# Depois nexus-core (REST API via uvicorn directo)
 systemctl start nexus-core 2>/dev/null || true
 sleep 5
 if systemctl is-active --quiet nexus-core; then
-    ok "  nexus-core: ACTIVE (api://0.0.0.0:8000)"
+    ok "  nexus-core: ACTIVE (http://0.0.0.0:8000)"
 else
     fail "  nexus-core: não ficou activo"
-    journalctl -u nexus-core -n 15 --no-pager 2>/dev/null | tail -10 | tee -a "$LOG_FILE" || true
+    journalctl -u nexus-core -n 20 --no-pager 2>/dev/null | tail -15 | tee -a "$LOG_FILE" || true
 fi
 
 # Dashboard por último
@@ -267,7 +280,7 @@ VPS_IP=$(
 [[ -z "$VPS_IP" ]] && VPS_IP="35.241.151.115"
 ok "  IP detectado: $VPS_IP"
 
-# O rebuild vai gerar VITE_WS_URL=ws://$VPS_IP:8801 (correcto)
+# O rebuild vai gerar VITE_WS_URL=ws://$VPS_IP:8801 e VITE_API_URL=http://$VPS_IP:8000
 if bash "$NEXUS_HOME/nexus/scripts/rebuild_dashboard.sh" "$VPS_IP" 2>&1 | tee -a "$LOG_FILE"; then
     ok "  Dashboard rebuild OK (VITE_WS_URL=ws://$VPS_IP:8801)"
 else
