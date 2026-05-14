@@ -1,4 +1,4 @@
-"""NEXUS — Servidor WebSocket standalone (porta 8001).
+"""NEXUS — Servidor WebSocket standalone (porta 8801).
 
 Inicia um servidor WebSocket puro (não-FastAPI) que o dashboard
 frontend usa para actualizações em tempo real.
@@ -61,29 +61,27 @@ async def _handler(ws: Any) -> None:
         log.info("WS client disconnected: %s  (total: %d)", addr, len(_clients))
 
 
-async def start_ws(host: str = "0.0.0.0", port: int = 8001) -> None:
-    """Inicia o servidor WebSocket. Corre indefinidamente até ser cancelado.
+async def start_ws(host: str = "0.0.0.0", port: int = 8801) -> None:
+    """Inicia o servidor WebSocket.
 
-    Levanta ImportError se websockets não estiver instalado (para que o
-    caller possa activar o fallback inline).
+    Porta default: 8801 (alinhada com VITE_WS_URL no frontend).
+    Levanta ImportError se websockets não estiver instalado.
     Levanta OSError se a porta estiver ocupada ou sem permissão.
     """
-    # Log imediato — antes de qualquer import, para garantir visibilidade no journal
-    log.info("[WS] start_ws() chamado — host=%s port=%d", host, port)
+    log.info("[WS] start_ws() — host=%s port=%d", host, port)
     print(f"[NEXUS WS] start_ws() host={host} port={port}", flush=True)
 
     try:
         import websockets  # type: ignore
         ws_ver = getattr(websockets, "__version__", "desconhecida")
-        log.info("[WS] websockets importado OK — versão=%s", ws_ver)
+        log.info("[WS] websockets=%s", ws_ver)
     except ImportError as exc:
         log.error(
-            "[WS] ERRO: package 'websockets' não instalado no venv activo (%s). "
-            "Corre: %s -m pip install 'websockets==10.4'",
-            exc,
-            __import__('sys').executable,
+            "[WS] package 'websockets' não instalado: %s. "
+            "Fix: %s -m pip install 'websockets>=10'",
+            exc, __import__('sys').executable,
         )
-        raise  # propaga para _start_ws() activar o fallback
+        raise
 
     log.info("[WS] A iniciar websockets.serve em ws://%s:%d ...", host, port)
     try:
@@ -108,5 +106,5 @@ if __name__ == "__main__":
         format="%(asctime)s [%(name)s] %(levelname)s  %(message)s",
     )
     _h = os.getenv("WS_HOST", "0.0.0.0")
-    _p = int(os.getenv("WS_PORT", "8001"))
+    _p = int(os.getenv("WS_PORT", "8801"))  # default 8801 — alinhado com frontend
     asyncio.run(start_ws(_h, _p))

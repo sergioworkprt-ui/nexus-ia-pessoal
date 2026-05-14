@@ -21,13 +21,15 @@ echo "--- health_check $(date -u +%Y-%m-%dT%H:%M:%SZ) ---" >> "$LOG_FILE"
 
 echo ""
 echo -e "${BLUE}════════════════════════════════════════${NC}"
-echo -e "${BLUE}   NEXUS Health Check                        ${NC}"
+echo -e "${BLUE}   NEXUS Health Check${NC}"
 echo -e "${BLUE}════════════════════════════════════════${NC}"
 echo ""
 
 # 1. systemd services
+# nexus-api foi REMOVIDO (conflito de porta 8000 com nexus-core)
+# nexus-ws gere o WebSocket standalone na porta 8801
 info "Serviços systemd:"
-for svc in nexus-core nexus-api nexus-dashboard nexus-ws; do
+for svc in nexus-core nexus-ws nexus-dashboard; do
     if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
         if systemctl is-active --quiet "$svc"; then
             ok "  $svc: ACTIVE"
@@ -35,12 +37,17 @@ for svc in nexus-core nexus-api nexus-dashboard nexus-ws; do
             fail "  $svc: INACTIVE"
             systemctl status "$svc" --no-pager -l 2>/dev/null | tail -5 || true
         fi
+    else
+        echo -e "${YELLOW}  $svc: não registado (skip)${NC}"
     fi
 done
 
 # 2. Portas abertas
+# 8000: nexus-core REST API
+# 8801: nexus-ws WebSocket (não 8001 — frontend usa 8801)
+# 9000: nexus-dashboard
 info "Portas TCP:"
-for entry in "8000:API-core" "8001:API-nexus" "8801:WebSocket" "9000:Dashboard"; do
+for entry in "8000:REST-API" "8801:WebSocket" "9000:Dashboard"; do
     PORT="${entry%%:*}"; LABEL="${entry##*:}"
     if ss -tulpn 2>/dev/null | grep -q ":${PORT}"; then
         ok "  :${PORT} ${LABEL}: ABERTA"
@@ -69,14 +76,14 @@ fi
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo -e "${GREEN}════════════════════════════════════════${NC}"
-    echo -e "${GREEN}   NEXUS: TUDO OK                            ${NC}"
+    echo -e "${GREEN}   NEXUS: TUDO OK${NC}"
     echo -e "${GREEN}════════════════════════════════════════${NC}"
     echo "HEALTH_CHECK=PASS  $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LOG_FILE"
     exit 0
 else
     echo -e "${RED}════════════════════════════════════════${NC}"
-    echo -e "${RED}   NEXUS: FALHAS DETECTADAS                  ${NC}"
-    echo -e "${RED}   Log: $LOG_FILE  ${NC}"
+    echo -e "${RED}   NEXUS: FALHAS DETECTADAS${NC}"
+    echo -e "${RED}   Log: $LOG_FILE${NC}"
     echo -e "${RED}════════════════════════════════════════${NC}"
     echo "HEALTH_CHECK=FAIL  $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LOG_FILE"
     exit 1

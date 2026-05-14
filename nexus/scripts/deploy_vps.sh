@@ -42,8 +42,10 @@ else
     log "    AVISO: pip não encontrado — a saltar"
 fi
 
-log "[3/5] Reiniciar nexus-core e nexus-api..."
-for svc in nexus-core nexus-api; do
+# Apenas nexus-core — nexus-api foi removido (conflito de porta com nexus-core no 8000)
+# O WS é reiniciado separadamente via nexus-ws
+log "[3/5] Reiniciar nexus-core e nexus-ws..."
+for svc in nexus-core nexus-ws; do
     if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
         systemctl restart "$svc" 2>&1 | tee -a "$LOG_FILE" && log "    $svc OK" || log "    $svc FALHOU"
     else
