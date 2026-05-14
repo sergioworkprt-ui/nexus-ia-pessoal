@@ -56,26 +56,21 @@ def _auth(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
         return
     if sec and sec.verify_token(token):
         return
-    raise HTTPException(401, "Unauthorized")
+    raise HTTPException(401, "Não autorizado")
 
 
 def _mod(name: str):
     if not _nexus:
-        raise HTTPException(503, "NEXUS not ready")
+        raise HTTPException(503, "NEXUS não está pronto")
     m = _nexus.get(name)
     if not m:
-        raise HTTPException(503, f"Module '{name}' unavailable")
+        raise HTTPException(503, f"Módulo '{name}' indisponível")
     return m
 
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
-    """Inicializa Orchestrator NEXUS no startup do uvicorn.
-
-    set_nexus() é chamado SEMPRE (mesmo com erros/timeouts nos módulos)
-    para que a porta 8000 nunca fique bloqueada.
-    """
     global _nexus
     instance = None
     try:
@@ -111,22 +106,15 @@ async def _lifespan(application: FastAPI):
             await asyncio.wait_for(instance.start(), timeout=25.0)
             log.info("[startup] Orchestrator iniciado — módulos: %s", loaded)
         except asyncio.TimeoutError:
-            log.warning(
-                "[startup] Orchestrator.start() timeout (25s) — "
-                "módulos lentos ignorados; uvicorn continua"
-            )
+            log.warning("[startup] Orchestrator.start() timeout (25s) — uvicorn continua")
         except Exception as exc:
             log.error("[startup] Orchestrator.start() erro: %s", exc)
 
     except Exception as exc:
-        log.error(
-            "[startup] Orchestrator não iniciou (%s) — a continuar sem orquestrador",
-            exc,
-        )
+        log.error("[startup] Orchestrator não iniciou: %s", exc)
 
     set_nexus(instance)
     log.info("[startup] nexus_ready=%s", instance is not None)
-
     yield
 
     if _nexus:
@@ -156,19 +144,19 @@ try:
     async def _http_mw(request: Request, call_next):
         return await http_logging_middleware(request, call_next, record_fn=_prom.record_request)
 except Exception as _e:
-    log.warning("Metrics/logging middleware unavailable: %s", _e)
+    log.warning("Metrics/logging middleware indisponível: %s", _e)
 
 try:
     from nexus.api.rest.automation import router as _automation_router
     app.include_router(_automation_router)
 except Exception as _e:
-    log.warning("Automation API unavailable: %s", _e)
+    log.warning("Automation API indisponível: %s", _e)
 
 try:
     from nexus.api.rest.prometheus_metrics import router as _prom_router
     app.include_router(_prom_router)
 except Exception as _e:
-    log.warning("Prometheus router unavailable: %s", _e)
+    log.warning("Prometheus router indisponível: %s", _e)
 
 
 # ── Models ─────────────────────────────────────────────────────────────────────
@@ -225,7 +213,7 @@ def health():
 @app.get("/status", dependencies=[Depends(_auth)])
 def status():
     if not _nexus:
-        raise HTTPException(503, "NEXUS not ready")
+        raise HTTPException(503, "NEXUS não está pronto")
     mods = {}
     for name in ["trading", "ml", "watchdog", "security", "tasks",
                  "xtb", "ibkr", "learning", "evolution", "truth_checker"]:
@@ -233,11 +221,11 @@ def status():
         if m and hasattr(m, "status"):
             mods[name] = m.status()
         elif m:
-            mods[name] = "running"
+            mods[name] = "activo"
     return {
         "name": "NEXUS", "version": "2.0.0",
         "modules": mods, "context": _nexus.get_context(),
-        "trading_mode": _nexus.get_context().get("trading_mode", "simulation"),
+        "trading_mode": _nexus.get_context().get("trading_mode", "simulacao"),
     }
 
 
@@ -246,11 +234,7 @@ def status():
 async def chat(req: ChatReq):
     if not _nexus:
         return {
-            "response": (
-                f"Olá! Recebi: \"{req.message}\" — "
-                "o orquestrador NEXUS não está activo. "
-                "Verifica: systemctl status nexus-core"
-            ),
+            "response": "O orquestrador NEXUS não está activo. Verifica: systemctl status nexus-core",
             "mode": req.mode,
             "nexus_ready": False,
         }
@@ -258,13 +242,13 @@ async def chat(req: ChatReq):
         log.info("[chat] input=%.80s mode=%s", req.message, req.mode)
         _nexus.update_context("chat_mode", req.mode)
         response = await _nexus.process(req.message)
-        log.info("[chat] resposta OK (%.60s...)", response)
+        log.info("[chat] resposta OK (%.60s)", response)
         return {"response": response, "mode": req.mode, "nexus_ready": True}
     except Exception as exc:
         log.error("[chat] pipeline falhou: %s", exc, exc_info=True)
         return {
-            "response": "Ocorreu um erro interno no orquestrador. Tenta novamente.",
-            "error": "internal_error",
+            "response": "Ocorreu um erro interno. Tenta novamente em alguns segundos.",
+            "error": "erro_interno",
             "mode": req.mode,
             "nexus_ready": True,
         }
@@ -281,7 +265,7 @@ def clear_memory():
     m = _mod("memory")
     if hasattr(m, "clear"):
         m.clear()
-    return {"status": "cleared"}
+    return {"status": "limpo"}
 
 
 # ── Tasks ──────────────────────────────────────────────────────────────────────
@@ -296,14 +280,14 @@ def create_task(req: TaskReq):
 @app.post("/tasks/{tid}/approve", dependencies=[Depends(_auth)])
 def approve_task(tid: str):
     if not _mod("tasks").approve(tid):
-        raise HTTPException(404, "Task not found")
-    return {"status": "approved"}
+        raise HTTPException(404, "Tarefa não encontrada")
+    return {"status": "aprovada"}
 
 @app.delete("/tasks/{tid}", dependencies=[Depends(_auth)])
 def delete_task(tid: str):
     if not _mod("tasks").delete(tid):
-        raise HTTPException(404, "Task not found")
-    return {"status": "deleted"}
+        raise HTTPException(404, "Tarefa não encontrada")
+    return {"status": "eliminada"}
 
 
 # ── Learning ───────────────────────────────────────────────────────────────────
@@ -338,14 +322,14 @@ def evolution_list(status: Optional[str] = None):
 @app.post("/evolution/{pid}/approve", dependencies=[Depends(_auth)])
 def evolution_approve(pid: str):
     if not _mod("evolution").approve(pid):
-        raise HTTPException(404, "Proposal not found")
-    return {"status": "approved"}
+        raise HTTPException(404, "Proposta não encontrada")
+    return {"status": "aprovada"}
 
 @app.post("/evolution/{pid}/reject", dependencies=[Depends(_auth)])
 def evolution_reject(pid: str):
     if not _mod("evolution").reject(pid):
-        raise HTTPException(404, "Proposal not found")
-    return {"status": "rejected"}
+        raise HTTPException(404, "Proposta não encontrada")
+    return {"status": "rejeitada"}
 
 @app.post("/evolution/{pid}/apply", dependencies=[Depends(_auth)])
 async def evolution_apply(pid: str):
@@ -371,7 +355,7 @@ async def xtb_balance(): return await _mod("xtb").get_balance()
 @app.post("/trading/xtb/order", dependencies=[Depends(_auth)])
 async def xtb_order(req: OrderReqXTB):
     if not _mod("security").validate_financial(req.volume * 100):
-        raise HTTPException(403, "Financial action not authorized")
+        raise HTTPException(403, "Acção financeira não autorizada")
     return await _mod("xtb").place_order(req.symbol, req.cmd, req.volume, req.sl, req.tp, req.price)
 
 
@@ -388,7 +372,7 @@ async def ibkr_account(): return await _mod("ibkr").get_account_summary()
 @app.post("/trading/ibkr/order", dependencies=[Depends(_auth)])
 async def ibkr_order(req: OrderReqIBKR):
     if not _mod("security").validate_financial(req.quantity * 10):
-        raise HTTPException(403, "Financial action not authorized")
+        raise HTTPException(403, "Acção financeira não autorizada")
     return await _mod("ibkr").place_order(req.symbol, req.action, req.quantity)
 
 @app.post("/trade/real/enable", dependencies=[Depends(_auth)])
@@ -399,7 +383,7 @@ def enable_real(req: RealEnableReq):
     ibkr = _nexus.get("ibkr") if _nexus else None
     if xtb: xtb.enable_real(req.code)
     if ibkr: ibkr.enable_real(req.code)
-    return {"authorized": ok, "warning": "Real money at risk" if ok else "Invalid code"}
+    return {"autorizado": ok, "aviso": "Dinheiro real em risco" if ok else "Código inválido"}
 
 
 # ── Security ───────────────────────────────────────────────────────────────────
@@ -407,7 +391,7 @@ def enable_real(req: RealEnableReq):
 def pin_verify(req: PinReq):
     sec = _mod("security")
     if not sec.check_rate("pin", limit=5, window=60):
-        raise HTTPException(429, "Too many PIN attempts")
+        raise HTTPException(429, "Demasiadas tentativas de PIN")
     if sec.verify_pin(req.pin):
         return {"ok": True, "token": sec.generate_token()}
     return {"ok": False}
@@ -434,17 +418,17 @@ def monitor_metrics():
                 "disk_percent": disk.percent,
                 "disk_free_gb": disk.free // 1024 // 1024 // 1024}
     except Exception as e:
-        return {"error": str(e)}
+        return {"erro": str(e)}
 
 @app.get("/monitor/status")
 def monitor_status():
     current_file = _MONITOR_DIR / "current.json"
     if not current_file.exists():
-        return {"error": "No monitor data yet", "hint": "Run scripts/monitor_collect.sh on VPS"}
+        return {"erro": "Sem dados de monitorização", "dica": "Corre scripts/monitor_collect.sh no VPS"}
     try:
         return _json.loads(current_file.read_text())
     except Exception as e:
-        return {"error": str(e)}
+        return {"erro": str(e)}
 
 @app.get("/monitor/history")
 def monitor_history(limit: int = 50):
@@ -456,18 +440,18 @@ def monitor_history(limit: int = 50):
         entries = [_json.loads(ln) for ln in lines]
         return {"history": entries[-limit:], "count": len(entries[-limit:])}
     except Exception as e:
-        return {"history": [], "error": str(e)}
+        return {"history": [], "erro": str(e)}
 
 @app.get("/monitor/autoheal")
 def monitor_autoheal():
     if not _AUTOHEAL_STATE.exists():
-        return {"consecutive_failures": 0, "last_action": "none", "last_check": None, "max_failures": 3}
+        return {"falhas_consecutivas": 0, "ultima_accao": "nenhuma", "ultima_verificacao": None, "max_falhas": 3}
     try:
         data = _json.loads(_AUTOHEAL_STATE.read_text())
         data.setdefault("max_failures", 3)
         return data
     except Exception as e:
-        return {"error": str(e)}
+        return {"erro": str(e)}
 
 @app.get("/monitor/scale")
 def monitor_scale():
@@ -480,7 +464,7 @@ def monitor_scale():
             history = [_json.loads(ln) for ln in lines]
         except Exception:
             pass
-    report = load_report.read_text() if load_report.exists() else "No scaling report yet"
+    report = load_report.read_text() if load_report.exists() else "Sem relatório de escalaão"
     latest = history[-1] if history else None
     return {"latest": latest, "history_count": len(history), "report": report,
             "recommendations": latest.get("recommendations", []) if latest else []}
@@ -491,7 +475,7 @@ def monitor_scale():
 def get_logs(service: str, lines: int = 100):
     allowed = {"api", "core", "dashboard", "audit"}
     if service not in allowed:
-        raise HTTPException(400, "Unknown service")
+        raise HTTPException(400, "Serviço desconhecido")
     log_file = _LOG_DIR / ("audit.log" if service == "audit" else f"{service}.log")
     if not log_file.exists():
         return {"lines": []}
@@ -518,7 +502,7 @@ def update_settings(body: dict):
         pass
     existing.update(body)
     _SETTINGS_PATH.write_text(_json.dumps(existing, indent=2))
-    return {"status": "saved", "settings": existing}
+    return {"status": "guardado", "settings": existing}
 
 
 # ── Legacy ─────────────────────────────────────────────────────────────────────
@@ -526,7 +510,7 @@ def update_settings(body: dict):
 async def legacy_positions():
     t = _nexus.get("trading") if _nexus else None
     if not t:
-        raise HTTPException(503, "Trading unavailable")
+        raise HTTPException(503, "Trading indisponível")
     return {"orders": t.get_orders() if hasattr(t, 'get_orders') else []}
 
 

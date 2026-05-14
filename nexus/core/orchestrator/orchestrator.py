@@ -6,6 +6,11 @@ log = get_logger("orchestrator")
 
 _MODULE_START_TIMEOUT = 10.0
 
+# Mensagens de sistema — sempre PT-PT
+_MSG_BLOCKED   = "Esse pedido está fora dos meus parâmetros operacionais."
+_MSG_FALLBACK  = "Entendido. Como posso ajudar?"
+_MSG_ERROR     = "Ocorreu um erro interno no orquestrador. Tenta novamente."
+
 
 class Orchestrator:
     """Central coordinator — boots all modules, routes requests."""
@@ -34,19 +39,19 @@ class Orchestrator:
 
     async def start(self):
         self._running = True
-        log.info("Orchestrator starting...")
+        log.info("Orchestrator a iniciar...")
         tasks = []
         for name, mod in self._modules.items():
             if hasattr(mod, "start") and asyncio.iscoroutinefunction(mod.start):
                 tasks.append(asyncio.create_task(self._start_module(name, mod)))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        log.info("Orchestrator ready (%d modules)", len(self._modules))
+        log.info("Orchestrator pronto (%d módulos)", len(self._modules))
 
     async def process(self, user_input: str) -> str:
-        """Pipeline completo com try/except por etapa — nunca propaga excepção."""
-        log.info("[process] input: %s", user_input[:80])
-        response = "Online. Como posso ajudar?"
+        """Pipeline completo com try/except por etapa — sempre devolve PT-PT."""
+        log.info("[process] input: %.80s", user_input)
+        response = _MSG_FALLBACK
 
         try:
             # 1. Validação de segurança
@@ -54,7 +59,7 @@ class Orchestrator:
             if security:
                 try:
                     if not security.validate_input(user_input):
-                        return "Esse pedido está fora dos meus parâmetros operacionais."
+                        return _MSG_BLOCKED
                 except Exception as exc:
                     log.warning("[process] security.validate_input erro: %s", exc)
 
@@ -66,16 +71,16 @@ class Orchestrator:
                 except Exception as exc:
                     log.warning("[process] memory.add(user) erro: %s", exc)
 
-            # 3. Gerar resposta via personality
+            # 3. Gerar resposta via personality (ou fallback)
             personality = self.get("personality")
             if personality:
                 try:
                     response = await personality.respond(user_input, self._context)
                 except Exception as exc:
                     log.error("[process] personality.respond erro: %s", exc, exc_info=True)
-                    response = self._simple_fallback(user_input)
+                    response = self._fallback(user_input)
             else:
-                response = self._simple_fallback(user_input)
+                response = self._fallback(user_input)
 
             # 4. Guardar resposta na memória
             if memory:
@@ -84,7 +89,7 @@ class Orchestrator:
                 except Exception as exc:
                     log.warning("[process] memory.add(nexus) erro: %s", exc)
 
-            # 5. TTS (fire-and-forget, nunca bloqueia)
+            # 5. TTS (fire-and-forget)
             tts = self.get("tts")
             if tts:
                 try:
@@ -94,19 +99,20 @@ class Orchestrator:
 
         except Exception as exc:
             log.error("[process] erro não capturado: %s", exc, exc_info=True)
-            response = "Ocorreu um erro interno no orquestrador."
+            return _MSG_ERROR
 
-        return response
+        return response if isinstance(response, str) and response.strip() else _MSG_FALLBACK
 
-    def _simple_fallback(self, text: str) -> str:
+    def _fallback(self, text: str) -> str:
+        """Fallback local sem LLM — sempre PT-PT."""
         t = text.lower()
         if any(w in t for w in ["trade", "compra", "venda", "ordem", "buy", "sell"]):
-            return "Módulo de trading pronto. Especifica símbolo, acção e quantidade."
+            return "Módulo de trading pronto. Indica símbolo, acção e volume."
         if any(w in t for w in ["preço", "mercado", "price", "market"]):
-            return "A obter dados de mercado."
-        if "status" in t or "estado" in t:
+            return "A obter dados de mercado. Qual o activo que pretendes?"
+        if any(w in t for w in ["status", "estado", "saúde"]):
             return "Todos os sistemas operacionais."
-        return "Entendido. Como posso ajudar?"
+        return _MSG_FALLBACK
 
     def update_context(self, key: str, value: Any):
         self._context[key] = value
@@ -122,4 +128,4 @@ class Orchestrator:
                     mod.stop()
                 except Exception as exc:
                     log.warning("Module '%s' stop() erro: %s", name, exc)
-        log.info("Orchestrator stopped")
+        log.info("Orchestrator parado")
