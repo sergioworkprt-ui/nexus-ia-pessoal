@@ -1,8 +1,8 @@
 """NEXUS REST API — all endpoints."""
 from __future__ import annotations
+import asyncio
 import json as _json
 import os
-import time as _time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, Any
@@ -25,6 +25,7 @@ _NEXUS_HOME = Path(os.getenv("NEXUS_HOME", "/opt/nexus"))
 _MONITOR_DIR = _NEXUS_HOME / "monitor"
 _AUTOHEAL_STATE = _NEXUS_HOME / "autoheal_state.json"
 
+# Módulos carregados no startup (cada um em try/except independente)
 _MODS = [
     ("memory",         "nexus.core.memory.memory",                   "Memory"),
     ("personality",    "nexus.core.personality.personality",          "Personality"),
@@ -68,11 +69,16 @@ def _mod(name: str):
     return m
 
 
-# ── Lifespan: inicializa o Orchestrator no startup do uvicorn ─────────────────
+# ── Lifespan ────────────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
-    """Inicializa Orchestrator NEXUS quando uvicorn arranca o app."""
+    """Inicializa Orchestrator NEXUS no startup do uvicorn.
+
+    Garante que set_nexus() é SEMPRE chamado (mesmo com erros/timeouts nos
+    módulos) para que a porta 8000 nunca fique bloqueada.
+    """
     global _nexus
+    instance = None
     try:
         from nexus.core.orchestrator.orchestrator import Orchestrator  # type: ignore
         instance = Orchestrator()
@@ -86,7 +92,6 @@ async def _lifespan(application: FastAPI):
             except Exception as exc:
                 log.warning("[startup] módulo '%s' indisponível: %s", name, exc)
 
-        # trading precisa do módulo security já carregado
         sec = instance.get("security")
         if sec:
             try:
@@ -96,7 +101,6 @@ async def _lifespan(application: FastAPI):
             except Exception as exc:
                 log.warning("[startup] módulo 'trading' indisponível: %s", exc)
 
-        # stt precisa do nexus.process como callback de wake word
         try:
             from nexus.core.voice.stt import STT  # type: ignore
             instance.register("stt", STT(on_wake=instance.process))
@@ -104,14 +108,32 @@ async def _lifespan(application: FastAPI):
         except Exception as exc:
             log.warning("[startup] módulo 'stt' indisponível: %s", exc)
 
-        await instance.start()
-        set_nexus(instance)
-        log.info("[startup] Orchestrator iniciado — módulos activos: %s", loaded)
+        # Arrancar módulos com timeout: se qualquer módulo travar (ex: IBKR com
+        # event loop conflict), o uvicorn continua e expe a porta 8000.
+        try:
+            await asyncio.wait_for(instance.start(), timeout=25.0)
+            log.info("[startup] Orchestrator iniciado — módulos: %s", loaded)
+        except asyncio.TimeoutError:
+            log.warning(
+                "[startup] Orchestrator.start() timeout (25s) — "
+                "módulos lentos ignorados; uvicorn continua"
+            )
+        except Exception as exc:
+            log.error("[startup] Orchestrator.start() erro: %s", exc)
+
     except Exception as exc:
         log.error(
-            "[startup] Orchestrator falhou (%s) — a continuar sem orquestrador", exc
+            "[startup] Orchestrator não iniciou (%s) — a continuar sem orquestrador",
+            exc,
         )
-    yield
+
+    # set_nexus é chamado SEMPRE — mesmo que start() tenha falhado ou expirado.
+    # Com instance=None, o /chat retorna mensagem informativa em vez de 503.
+    set_nexus(instance)
+    log.info("[startup] nexus_ready=%s", instance is not None)
+
+    yield  # uvicorn abre a porta 8000 aqui
+
     if _nexus:
         try:
             await _nexus.stop()
@@ -122,7 +144,6 @@ async def _lifespan(application: FastAPI):
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs", lifespan=_lifespan)
 
-# CORS: permite qualquer origem — não usar allow_credentials=True com allow_origins=["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -132,7 +153,6 @@ app.add_middleware(
     max_age=3600,
 )
 
-# ── HTTP middleware: Prometheus counters + structured log ─────────────────────
 try:
     from nexus.api.rest import prometheus_metrics as _prom
     from nexus.services.logger.structured import http_logging_middleware
@@ -143,7 +163,6 @@ try:
 except Exception as _e:
     log.warning("Metrics/logging middleware unavailable: %s", _e)
 
-# ── Extra routers ──────────────────────────────────────────────────────────────
 try:
     from nexus.api.rest.automation import router as _automation_router
     app.include_router(_automation_router)
@@ -233,9 +252,8 @@ async def chat(req: ChatReq):
     if not _nexus:
         return {
             "response": (
-                f"Olá! Recebi a tua mensagem: \"{req.message}\" — "
-                "mas o orquestrador NEXUS não está activo neste momento. "
-                "O chat completo requer o nexus-core em execução. "
+                f"Olá! Recebi: \"{req.message}\" — "
+                "o orquestrador NEXUS não está activo. "
                 "Verifica: systemctl status nexus-core"
             ),
             "mode": req.mode, "nexus_ready": False,
@@ -426,10 +444,9 @@ def monitor_history(limit: int = 50):
     if not history_file.exists():
         return {"history": [], "count": 0}
     try:
-        lines = [l for l in history_file.read_text().splitlines() if l.strip()]
-        entries = [_json.loads(l) for l in lines]
-        limited = entries[-limit:]
-        return {"history": limited, "count": len(limited)}
+        lines = [ln for ln in history_file.read_text().splitlines() if ln.strip()]
+        entries = [_json.loads(ln) for ln in lines]
+        return {"history": entries[-limit:], "count": len(entries[-limit:])}
     except Exception as e:
         return {"history": [], "error": str(e)}
 
@@ -451,8 +468,8 @@ def monitor_scale():
     history: list = []
     if load_history.exists():
         try:
-            lines = [l for l in load_history.read_text().splitlines() if l.strip()]
-            history = [_json.loads(l) for l in lines]
+            lines = [ln for ln in load_history.read_text().splitlines() if ln.strip()]
+            history = [_json.loads(ln) for ln in lines]
         except Exception:
             pass
     report = load_report.read_text() if load_report.exists() else "No scaling report yet"

@@ -4,6 +4,8 @@ from nexus.services.logger.logger import get_logger
 
 log = get_logger("orchestrator")
 
+_MODULE_START_TIMEOUT = 10.0  # segundos por módulo
+
 
 class Orchestrator:
     """Central coordinator — boots all modules, routes requests."""
@@ -15,25 +17,35 @@ class Orchestrator:
 
     def register(self, name: str, module: Any):
         self._modules[name] = module
-        log.info(f"Module registered: {name}")
+        log.info("Module registered: %s", name)
 
     def get(self, name: str) -> Optional[Any]:
         return self._modules.get(name)
 
+    async def _start_module(self, name: str, mod: Any) -> None:
+        """Inicia um módulo com timeout individual. Nunca lança excepção."""
+        try:
+            await asyncio.wait_for(mod.start(), timeout=_MODULE_START_TIMEOUT)
+            log.info("Module started: %s", name)
+        except asyncio.TimeoutError:
+            log.warning("Module '%s' start() timeout (%ss) — ignorado", name, _MODULE_START_TIMEOUT)
+        except Exception as exc:
+            log.warning("Module '%s' start() erro: %s", name, exc)
+
     async def start(self):
         self._running = True
-        log.info("Orchestrator started")
+        log.info("Orchestrator starting...")
         tasks = []
         for name, mod in self._modules.items():
             if hasattr(mod, "start") and asyncio.iscoroutinefunction(mod.start):
-                tasks.append(asyncio.create_task(mod.start()))
-                log.info(f"Module started: {name}")
+                tasks.append(asyncio.create_task(self._start_module(name, mod)))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        log.info("Orchestrator ready (%d modules)", len(self._modules))
 
     async def process(self, user_input: str) -> str:
         """Route user input through security → personality → response."""
-        log.info(f"Input: {user_input[:80]}")
+        log.info("Input: %s", user_input[:80])
 
         security = self.get("security")
         if security and not security.validate_input(user_input):
@@ -68,5 +80,8 @@ class Orchestrator:
         self._running = False
         for name, mod in self._modules.items():
             if hasattr(mod, "stop"):
-                mod.stop()
+                try:
+                    mod.stop()
+                except Exception as exc:
+                    log.warning("Module '%s' stop() erro: %s", name, exc)
         log.info("Orchestrator stopped")
