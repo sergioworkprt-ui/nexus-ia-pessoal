@@ -30,7 +30,7 @@ warn() { echo -e "${YELLOW}⚠ $*${NC}"; echo "[WARN] $*" >> "$LOG_FILE"; }
   echo "═══════════════════════════════════════════════════════"
 } | tee -a "$LOG_FILE"
 
-# ─── STEP 1: Parar todos os serviços ───────────────────────────────────────────
+# ─── STEP 1: Parar todos os serviços ─────────────────────────────────────────────
 info "[1/10] A parar serviços NEXUS..."
 for svc in nexus-core nexus-api nexus-ws nexus-dashboard nexus-backend; do
     if systemctl is-active --quiet "$svc" 2>/dev/null || \
@@ -50,7 +50,7 @@ else
     ok "  Porto 8000 livre"
 fi
 
-# ─── STEP 2: git pull ──────────────────────────────────────────────────────────
+# ─── STEP 2: git pull ───────────────────────────────────────────────────────
 info "[2/10] git pull ($BRANCH)..."
 cd "$NEXUS_HOME"
 if git fetch origin "$BRANCH" 2>&1 | tee -a "$LOG_FILE" && \
@@ -60,7 +60,7 @@ else
     warn "  git pull falhou — a continuar com código actual"
 fi
 
-# ─── STEP 3: Actualizar dependências Python ────────────────────────────────────
+# ─── STEP 3: Actualizar dependências Python ──────────────────────────────────────
 info "[3/10] Actualizar dependências Python..."
 REQ="$NEXUS_HOME/nexus/requirements.txt"
 if [[ -f "$VENV/bin/pip" ]]; then
@@ -76,7 +76,7 @@ else
     warn "  pip não encontrado — cria o venv: python3 -m venv $VENV"
 fi
 
-# ─── STEP 4: Verificar e corrigir .env ────────────────────────────────────────
+# ─── STEP 4: Verificar e corrigir .env ──────────────────────────────────────────
 info "[4/10] A verificar .env..."
 if [[ ! -f "$ENV_FILE" ]]; then
     warn "  .env não encontrado — a criar mínimo funcional..."
@@ -106,7 +106,7 @@ elif ! grep -q 'WS_PORT' "$ENV_FILE" 2>/dev/null; then
 fi
 # Fix API_PORT: deve ser 8000
 if grep -q 'API_PORT=' "$ENV_FILE" 2>/dev/null; then
-    _ap=$(grep 'API_PORT=' "$ENV_FILE" | cut -d= -f2 | head -1 | tr -d '"\'' | xargs)
+    _ap=$(grep 'API_PORT=' "$ENV_FILE" | cut -d= -f2 | head -1 | tr -d "\"'" | xargs)
     if [[ "$_ap" != "8000" ]]; then
         sed -i "s/API_PORT=.*/API_PORT=8000/g" "$ENV_FILE"
         ok "  .env: API_PORT corrigido para 8000 (era $_ap)"
@@ -125,7 +125,7 @@ else
     ok "  .env: NEXUS_API_URL existe"
 fi
 
-# ─── STEP 5: Criar directorios necessários ─────────────────────────────────────
+# ─── STEP 5: Criar directorios necessários ─────────────────────────────────────────
 info "[5/10] A criar directorios..."
 for d in "$NEXUS_HOME/logs" "$NEXUS_HOME/monitor" "$NEXUS_HOME/backups" "$NEXUS_HOME/data"; do
     mkdir -p "$d" 2>/dev/null && ok "  $d" || true
@@ -136,7 +136,7 @@ chown -R nexus:nexus /var/log/nexus 2>/dev/null || \
     chmod 777 /var/log/nexus 2>/dev/null || true
 ok "  /var/log/nexus (com permissões)"
 
-# ─── STEP 6: Corrigir ficheiros de serviço systemd ─────────────────────────────
+# ─── STEP 6: Corrigir ficheiros de serviço systemd ───────────────────────────────
 info "[6/10] A corrigir serviços systemd..."
 
 if [[ -f "$VENV/bin/uvicorn" ]]; then
@@ -159,9 +159,6 @@ for obsolete in nexus-api nexus-ws nexus-backend; do
 done
 ok "  Serviços obsoletos removidos (nexus-api, nexus-ws, nexus-backend)"
 
-# nexus-core.service: usa nexus.api_server:app (entry point resiliente)
-# nexus.api_server importa nexus.api.rest.main:app; se falhar, serve app mínimo
-# e expõe o erro via GET /health para diagnóstico imediato.
 cat > "$SVC_DIR/nexus-core.service" <<SVC_CORE
 [Unit]
 Description=NEXUS AI — REST API (porta 8000)
@@ -239,14 +236,13 @@ elif echo "$FULL_IMPORT_RESULT" | grep -q 'FULL_API_FAIL'; then
     warn "  Para ver o erro completo: journalctl -u nexus-core -n 50 --no-pager"
 fi
 
-# ─── STEP 7: Iniciar serviços ──────────────────────────────────────────────────
+# ─── STEP 7: Iniciar serviços ────────────────────────────────────────────────────
 info "[7/10] A iniciar serviços..."
 
 systemctl start nexus-core 2>/dev/null || true
 sleep 6
 if systemctl is-active --quiet nexus-core; then
     ok "  nexus-core: ACTIVE"
-    # Testar /health directamente
     HC=$(curl -s --max-time 5 http://localhost:8000/health 2>/dev/null || echo "")
     if echo "$HC" | grep -q '"status"'; then
         if echo "$HC" | grep -q '"degraded"'; then
@@ -275,7 +271,7 @@ if [[ -f "$SVC_DIR/nexus-dashboard.service" ]]; then
     fi
 fi
 
-# ─── STEP 8: Rebuild do dashboard ─────────────────────────────────────────────
+# ─── STEP 8: Rebuild do dashboard ───────────────────────────────────────────────
 info "[8/10] Rebuild do dashboard..."
 VPS_IP=$(
     curl -s --max-time 5 https://api.ipify.org 2>/dev/null ||
@@ -291,12 +287,12 @@ else
     warn "  Dashboard rebuild falhou — a continuar"
 fi
 
-# ─── STEP 9: Health check ───────────────────────────────────══════════
+# ─── STEP 9: Health check ─────────────────────────────────────────────────────
 info "[9/10] Health check..."
 sleep 3
 bash "$NEXUS_HOME/nexus/scripts/health_check.sh" 2>&1 | tee -a "$LOG_FILE" || true
 
-# ─── STEP 10: Sumário final ────────────────────────────────────────────────────
+# ─── STEP 10: Sumário final ──────────────────────────────────────────────────────
 echo "" | tee -a "$LOG_FILE"
 info "[10/10] Sumário final"
 echo "" | tee -a "$LOG_FILE"
