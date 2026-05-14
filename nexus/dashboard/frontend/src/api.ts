@@ -1,3 +1,6 @@
+// VITE_API_URL: URL base da REST API.
+// Em produção: http://IP:9000/api  (proxy via dashboard server)
+// Em dev local: http://localhost:8000  (directo ao nexus-core)
 const BASE = (
   (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
 ).replace(/\/$/, '')
@@ -97,14 +100,18 @@ export const api = {
 }
 
 /**
- * URL do WebSocket do nexus-core.
- * - Usa VITE_WS_URL se definido (ex: ws://35.241.151.115:8801)
- * - Fallback local: porta 8801 (nexus-core WS), nunca derivada da API_PORT
+ * URL do WebSocket.
+ * Usa VITE_WS_URL se definido em tempo de build.
+ * Fallback: deriva de BASE — substitui http→ws e /api→/ws.
+ *   Ex: http://IP:9000/api  →  ws://IP:9000/ws   (produção via proxy)
+ *       http://localhost:8000 →  ws://localhost:8000/ws  (dev local)
  */
 export const wsUrl = (): string => {
   const envWs = import.meta.env.VITE_WS_URL as string | undefined
   if (envWs) return envWs
-  // Fallback dev local: extrai o host de BASE e usa porta 8801 (nexus-core WS)
-  const host = BASE.replace(/^https?:\/\//, '').replace(/:\d+$/, '')
-  return `ws://${host}:8801`
+  // Derivar de BASE: http(s) → ws(s), remover sufixo /api
+  return BASE
+    .replace(/^https/, 'wss')
+    .replace(/^http/, 'ws')
+    .replace(/\/api$/, '') + '/ws'
 }
