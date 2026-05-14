@@ -7,7 +7,7 @@
 #   Porto 9000 — nexus-dashboard : dashboard React + proxy /api/* e /ws
 set -uo pipefail
 
-# ── Auto-copia para /tmp: imune a git reset --hard no Step 2 ───────────────────
+# ── Auto-copia para /tmp: imune a git reset --hard no Step 2 ──────────────────
 # O bash le scripts em blocos (~8KB). O git reset --hard no Step 2 substitui
 # este ficheiro no disco; o bash le o bloco seguinte da versao nova e falha.
 # Copiando para /tmp antes de qualquer execucao, o git pull nunca afecta a
@@ -61,6 +61,14 @@ if ss -tulpn 2>/dev/null | grep -q ':8000'; then
 else
     ok "  Porto 8000 livre"
 fi
+if ss -tulpn 2>/dev/null | grep -q ':9000'; then
+    warn "  Porto 9000 ainda em uso apos stop! A matar processo..."
+    fuser -k 9000/tcp 2>/dev/null || true
+    sleep 2
+    ss -tulpn 2>/dev/null | grep -q ':9000' && fail "  Porto 9000 AINDA em uso" || ok "  Porto 9000 livre"
+else
+    ok "  Porto 9000 livre"
+fi
 
 # --- STEP 2: git pull --------------------------------------------------------
 info "[2/10] git pull ($BRANCH)..."
@@ -94,7 +102,7 @@ fi
 # --- STEP 3.5: Ferramentas de analise de video --------------------------------
 info "[3.5] Ferramentas de analise de video (ffmpeg + whisper + dirs)..."
 
-# ffmpeg — necessario para yt-dlp extrair audio para whisper
+# ffmpeg -- necessario para yt-dlp extrair audio para whisper
 if command -v ffmpeg &>/dev/null; then
     ok "  ffmpeg: ja instalado"
 else
@@ -102,31 +110,36 @@ else
     if apt-get install -y ffmpeg -q 2>&1 | tail -3 | tee -a "$LOG_FILE"; then
         ok "  ffmpeg instalado"
     else
-        warn "  ffmpeg: apt install falhou (opcional — so necessario para whisper)"
+        warn "  ffmpeg: apt install falhou (opcional -- so necessario para whisper)"
     fi
 fi
 
-# yt-dlp — actualizar para versao mais recente
-if command -v yt-dlp &>/dev/null || [[ -f "$VENV/bin/yt-dlp" ]]; then
-    if [[ -f "$VENV/bin/pip" ]]; then
-        "$VENV/bin/pip" install --upgrade yt-dlp -q 2>&1 | tail -1 | tee -a "$LOG_FILE" || true
-    fi
+# yt-dlp -- actualizar para versao mais recente
+if [[ -f "$VENV/bin/pip" ]]; then
+    "$VENV/bin/pip" install --upgrade yt-dlp -q 2>&1 | tail -1 | tee -a "$LOG_FILE" || true
     ok "  yt-dlp: actualizado"
 fi
 
-# openai-whisper — transcricao local (fallback quando video sem legendas)
+# openai-whisper -- instalacao OPCIONAL com verificacao de espaco em disco
+# Nao esta em requirements.txt porque torch pesa ~2GB e pode encher o disco
 if "$PYTHON" -c "import whisper" 2>/dev/null; then
     ok "  openai-whisper: ja instalado"
 else
-    info "  A instalar openai-whisper (pode demorar — inclui torch CPU)..."
-    if [[ -f "$VENV/bin/pip" ]]; then
-        if "$VENV/bin/pip" install openai-whisper -q 2>&1 | tail -3 | tee -a "$LOG_FILE"; then
-            ok "  openai-whisper instalado"
-        else
-            warn "  openai-whisper: falhou (videos sem legendas nao serao transcritos)"
+    _DISK_FREE_GB=$(df -BG "$NEXUS_HOME" 2>/dev/null | awk 'NR==2{gsub(/G/,""); print $4}' | head -1)
+    _DISK_FREE_GB="${_DISK_FREE_GB:-0}"
+    info "  Espaco livre em disco: ${_DISK_FREE_GB}GB"
+    if [[ "$_DISK_FREE_GB" -ge 3 ]]; then
+        info "  A instalar openai-whisper (pode demorar -- inclui torch CPU)..."
+        if [[ -f "$VENV/bin/pip" ]]; then
+            if "$VENV/bin/pip" install openai-whisper -q 2>&1 | tail -3 | tee -a "$LOG_FILE"; then
+                ok "  openai-whisper instalado"
+            else
+                warn "  openai-whisper: falhou (videos sem legendas nao serao transcritos)"
+            fi
         fi
     else
-        warn "  openai-whisper: venv nao encontrado (instala manualmente: pip install openai-whisper)"
+        warn "  openai-whisper: SALTADO -- apenas ${_DISK_FREE_GB}GB livres (precisa >=3GB para torch)"
+        warn "  Para instalar manualmente quando houver espaco: pip install openai-whisper"
     fi
 fi
 
@@ -222,6 +235,7 @@ for obsolete in nexus-api nexus-ws nexus-backend; do
 done
 ok "  Servicos obsoletos removidos"
 
+# Gerar nexus-core.service
 {
     echo '[Unit]'
     echo 'Description=NEXUS AI -- REST API (porta 8000)'
@@ -247,11 +261,40 @@ ok "  Servicos obsoletos removidos"
     echo '[Install]'
     echo 'WantedBy=multi-user.target'
 } > "$SVC_DIR/nexus-core.service"
-ok "  nexus-core.service actualizado"
+ok "  nexus-core.service gerado"
+
+# Gerar nexus-dashboard.service (sempre regenerado -- ExecStart correcto)
+{
+    echo '[Unit]'
+    echo 'Description=NEXUS Dashboard -- frontend React + proxy /api/* e /ws (porta 9000)'
+    echo 'After=network-online.target'
+    echo 'Wants=network-online.target'
+    echo ''
+    echo '[Service]'
+    echo 'Type=simple'
+    echo "User=$SVC_USER"
+    echo "Group=$SVC_USER"
+    echo "WorkingDirectory=$NEXUS_HOME"
+    echo "EnvironmentFile=-$ENV_FILE"
+    echo "Environment=PYTHONPATH=$NEXUS_HOME"
+    echo 'Environment=LOG_DIR=/var/log/nexus'
+    echo 'Environment=NEXUS_API_URL=http://localhost:8000'
+    echo "ExecStart=$UVICORN nexus.dashboard.server:app --host 0.0.0.0 --port 9000 --log-level info"
+    echo 'Restart=always'
+    echo 'RestartSec=10'
+    echo 'StartLimitIntervalSec=0'
+    echo 'StandardOutput=journal'
+    echo 'StandardError=journal'
+    echo 'SyslogIdentifier=nexus-dashboard'
+    echo ''
+    echo '[Install]'
+    echo 'WantedBy=multi-user.target'
+} > "$SVC_DIR/nexus-dashboard.service"
+ok "  nexus-dashboard.service gerado"
 
 systemctl daemon-reload
 systemctl enable nexus-core 2>/dev/null || true
-[[ -f "$SVC_DIR/nexus-dashboard.service" ]] && systemctl enable nexus-dashboard 2>/dev/null || true
+systemctl enable nexus-dashboard 2>/dev/null || true
 
 # --- STEP 6.5: Teste de importacao Python ------------------------------------
 info "[6.5] Teste de importacao Python..."
@@ -303,7 +346,33 @@ elif echo "$FULL_IMPORT_RESULT" | grep -q 'FULL_API_FAIL'; then
     warn "  nexus-core vai arrancar em modo MINIMO com /health funcional"
 fi
 
-rm -f "$_PY_TEST" "$_PY_FULL"
+# Testar import do dashboard server
+_PY_DASH=$(mktemp /tmp/nexus_dash_test_XXXXXX.py)
+cat > "$_PY_DASH" <<'PYEOF'
+import sys, os
+nexus_home = os.environ.get('NEXUS_HOME', '/opt/nexus')
+sys.path.insert(0, nexus_home)
+try:
+    from nexus.dashboard.server import app
+    print('DASH_OK')
+except Exception as e:
+    import traceback
+    print('DASH_FAIL: ' + type(e).__name__ + ': ' + str(e))
+    traceback.print_exc()
+PYEOF
+
+DASH_IMPORT_RESULT=$(NEXUS_HOME="$NEXUS_HOME" "$PYTHON" "$_PY_DASH" 2>&1)
+echo "$DASH_IMPORT_RESULT" | tee -a "$LOG_FILE"
+
+if echo "$DASH_IMPORT_RESULT" | grep -q 'DASH_OK'; then
+    ok "  nexus.dashboard.server: import OK"
+else
+    DASH_FAIL=$(echo "$DASH_IMPORT_RESULT" | grep 'DASH_FAIL' | head -1)
+    fail "  nexus.dashboard.server: FALHOU -- $DASH_FAIL"
+    warn "  nexus-dashboard nao vai conseguir arrancar!"
+fi
+
+rm -f "$_PY_TEST" "$_PY_FULL" "$_PY_DASH"
 
 # --- STEP 7: Iniciar servicos ------------------------------------------------
 info "[7/10] A iniciar servicos..."
@@ -328,15 +397,20 @@ else
     journalctl -u nexus-core -n 30 --no-pager 2>/dev/null | tail -20 | tee -a "$LOG_FILE" || true
 fi
 
-if [[ -f "$SVC_DIR/nexus-dashboard.service" ]]; then
-    systemctl start nexus-dashboard 2>/dev/null || true
-    sleep 3
-    if systemctl is-active --quiet nexus-dashboard; then
-        ok "  nexus-dashboard: ACTIVE (:9000)"
+# Iniciar nexus-dashboard (sempre -- servico gerado no STEP 6)
+systemctl start nexus-dashboard 2>/dev/null || true
+sleep 4
+if systemctl is-active --quiet nexus-dashboard; then
+    ok "  nexus-dashboard: ACTIVE (:9000)"
+    DHC=$(curl -s --max-time 5 http://localhost:9000/healthz 2>/dev/null || echo "")
+    if echo "$DHC" | grep -q 'dist_exists'; then
+        ok "  :9000/healthz responde: $DHC"
     else
-        fail "  nexus-dashboard: nao ficou activo"
-        journalctl -u nexus-dashboard -n 10 --no-pager 2>/dev/null | tail -8 | tee -a "$LOG_FILE" || true
+        warn "  :9000/healthz sem resposta ainda (dist pode estar em build)"
     fi
+else
+    fail "  nexus-dashboard: nao ficou activo"
+    journalctl -u nexus-dashboard -n 30 --no-pager 2>/dev/null | tail -20 | tee -a "$LOG_FILE" || true
 fi
 
 # --- STEP 8: Rebuild do dashboard --------------------------------------------
@@ -353,6 +427,8 @@ if bash "$NEXUS_HOME/nexus/scripts/rebuild_dashboard.sh" "$VPS_IP" 2>&1 | tee -a
     ok "  Dashboard rebuild OK"
 else
     warn "  Dashboard rebuild falhou -- a continuar"
+    info "  nexus-dashboard pode servir frontend antigo ou 503; corre rebuild manualmente:"
+    info "  bash $NEXUS_HOME/nexus/scripts/rebuild_dashboard.sh $VPS_IP"
 fi
 
 # --- STEP 9: Health check ----------------------------------------------------
@@ -382,7 +458,6 @@ if echo "$API_RESP" | grep -q 'status'; then
     if echo "$API_RESP" | grep -q 'degraded'; then
         warn "  :8000/health -> MODO MINIMO"
         echo "  $API_RESP"
-        warn "  Fix: journalctl -u nexus-core -n 50 --no-pager"
     else
         ok "  :8000/health -> $API_RESP"
     fi
@@ -408,13 +483,9 @@ echo "  Dashboard : http://${VPS_IP}:9000"
 echo "  API       : http://${VPS_IP}:9000/api/health"
 echo "  WS        : ws://${VPS_IP}:9000/ws"
 echo "  Logs core : journalctl -u nexus-core -n 50 --no-pager"
+echo "  Logs dash : journalctl -u nexus-dashboard -n 50 --no-pager"
 echo ""
-echo "  Teste de video:"
-echo "  curl -s -X POST http://localhost:8000/video/analyze \\"
-echo "    -H 'Content-Type: application/json' \\"
-echo "    -d '{\"url\": \"https://youtube.com/watch?v=dQw4w9WgXcQ\"}' | python3 -m json.tool"
-echo ""
-echo "  Teste via chat:"
+echo "  Teste de video via chat:"
 echo "  curl -s -X POST http://localhost:8000/chat \\"
 echo "    -H 'Content-Type: application/json' \\"
 echo "    -d '{\"message\": \"Analisa este video: https://youtube.com/watch?v=dQw4w9WgXcQ\"}' | python3 -m json.tool"
