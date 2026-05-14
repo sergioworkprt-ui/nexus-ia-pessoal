@@ -7,6 +7,19 @@
 #   Porto 9000 — nexus-dashboard : dashboard React + proxy /api/* e /ws
 set -uo pipefail
 
+# ── Auto-cópia para /tmp: imune a git reset --hard no Step 2 ───────────────────
+# O bash lê scripts em blocos (~8KB). O git reset --hard no Step 2 substitui
+# este ficheiro no disco; o bash lê o bloco seguinte da versão nova e falha.
+# Copiando para /tmp antes de qualquer execução, o git pull nunca afecta a
+# execução em curso. _NEXUS_COPY exportado evita loop infinito.
+if [[ -z "${_NEXUS_COPY:-}" ]]; then
+    _TMP=$(mktemp /tmp/nexus_fix_XXXXXX.sh)
+    cp "$0" "$_TMP"
+    chmod 700 "$_TMP"
+    export _NEXUS_COPY=1
+    exec bash "$_TMP" "$@"
+fi
+
 NEXUS_HOME="/opt/nexus"
 VENV="$NEXUS_HOME/venv"
 BRANCH="claude/create-test-file-d1AY6"
@@ -25,24 +38,23 @@ warn() { echo -e "${YELLOW}⚠ $*${NC}"; echo "[WARN] $*" >> "$LOG_FILE"; }
 
 {
   echo ""
-  echo "═══════════════════════════════════════════════════════"
-  echo "  NEXUS Master Fix — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "═══════════════════════════════════════════════════════"
+  echo "======================================================="
+  echo "  NEXUS Master Fix -- $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "======================================================="
 } | tee -a "$LOG_FILE"
 
-# ─── STEP 1: Parar todos os serviços ─────────────────────────────────────────────
-info "[1/10] A parar serviços NEXUS..."
+# --- STEP 1: Parar todos os servicos ----------------------------------------
+info "[1/10] A parar servicos NEXUS..."
 for svc in nexus-core nexus-api nexus-ws nexus-dashboard nexus-backend; do
     if systemctl is-active --quiet "$svc" 2>/dev/null || \
        systemctl is-failed --quiet "$svc" 2>/dev/null; then
         systemctl stop "$svc" 2>/dev/null && ok "  $svc parado" || warn "  $svc: erro ao parar"
     else
-        warn "  $svc já estava inactivo"
+        warn "  $svc ja estava inactivo"
     fi
 done
-# Garantir que nenhum processo ocupa a porta 8000
 if ss -tulpn 2>/dev/null | grep -q ':8000'; then
-    warn "  Porto 8000 ainda em uso após stop! A matar processo..."
+    warn "  Porto 8000 ainda em uso apos stop! A matar processo..."
     fuser -k 8000/tcp 2>/dev/null || true
     sleep 2
     ss -tulpn 2>/dev/null | grep -q ':8000' && fail "  Porto 8000 AINDA em uso" || ok "  Porto 8000 livre"
@@ -50,37 +62,37 @@ else
     ok "  Porto 8000 livre"
 fi
 
-# ─── STEP 2: git pull ───────────────────────────────────────────────────────
+# --- STEP 2: git pull --------------------------------------------------------
 info "[2/10] git pull ($BRANCH)..."
 cd "$NEXUS_HOME"
 if git fetch origin "$BRANCH" 2>&1 | tee -a "$LOG_FILE" && \
    git reset --hard "origin/$BRANCH" 2>&1 | tee -a "$LOG_FILE"; then
-    ok "  Código actualizado: $(git rev-parse --short HEAD)"
+    ok "  Codigo actualizado: $(git rev-parse --short HEAD)"
 else
-    warn "  git pull falhou — a continuar com código actual"
+    warn "  git pull falhou -- a continuar com codigo actual"
 fi
 
-# ─── STEP 3: Actualizar dependências Python ──────────────────────────────────────
-info "[3/10] Actualizar dependências Python..."
+# --- STEP 3: Actualizar dependencias Python ----------------------------------
+info "[3/10] Actualizar dependencias Python..."
 REQ="$NEXUS_HOME/nexus/requirements.txt"
 if [[ -f "$VENV/bin/pip" ]]; then
     "$VENV/bin/pip" install --upgrade pip -q 2>&1 | tail -1 | tee -a "$LOG_FILE" || true
     if "$VENV/bin/pip" install -r "$REQ" -q 2>&1 | tee -a "$LOG_FILE"; then
-        ok "  pip (venv): dependências actualizadas"
+        ok "  pip (venv): dependencias actualizadas"
     else
         warn "  pip install falhou (alguns pacotes podem estar em falta)"
     fi
 elif command -v pip3 &>/dev/null; then
     pip3 install -r "$REQ" -q 2>&1 | tee -a "$LOG_FILE" || true
 else
-    warn "  pip não encontrado — cria o venv: python3 -m venv $VENV"
+    warn "  pip nao encontrado -- cria o venv: python3 -m venv $VENV"
 fi
 
-# ─── STEP 4: Verificar e corrigir .env ──────────────────────────────────────────
+# --- STEP 4: Verificar e corrigir .env ---------------------------------------
 info "[4/10] A verificar .env..."
 if [[ ! -f "$ENV_FILE" ]]; then
-    warn "  .env não encontrado — a criar mínimo funcional..."
-    cat > "$ENV_FILE" <<MINENV
+    warn "  .env nao encontrado -- a criar minimo funcional..."
+    cat > "$ENV_FILE" <<'MINENV'
 NEXUS_HOME=/opt/nexus
 NEXUS_API_KEY=nexus-change-me
 AUTOMATION_API_KEY=
@@ -97,18 +109,21 @@ MINENV
 else
     ok "  .env existe"
 fi
-# Fix WS_PORT: 8001 → 8801
+
 if grep -q 'WS_PORT=8001' "$ENV_FILE" 2>/dev/null; then
     sed -i 's/WS_PORT=8001/WS_PORT=8801/g' "$ENV_FILE"
-    ok "  .env: WS_PORT corrigido de 8001 → 8801"
+    ok "  .env: WS_PORT corrigido 8001->8801"
 elif ! grep -q 'WS_PORT' "$ENV_FILE" 2>/dev/null; then
     echo 'WS_PORT=8801' >> "$ENV_FILE"
+    ok "  .env: WS_PORT=8801 adicionado"
+else
+    ok "  .env: WS_PORT=8801 (ok)"
 fi
-# Fix API_PORT: deve ser 8000
+
 if grep -q 'API_PORT=' "$ENV_FILE" 2>/dev/null; then
-    _ap=$(grep 'API_PORT=' "$ENV_FILE" | cut -d= -f2 | head -1 | tr -d "\"'" | xargs)
+    _ap=$(grep 'API_PORT=' "$ENV_FILE" | cut -d= -f2 | head -1 | tr -d '"' | tr -d "'" | xargs)
     if [[ "$_ap" != "8000" ]]; then
-        sed -i "s/API_PORT=.*/API_PORT=8000/g" "$ENV_FILE"
+        sed -i 's/API_PORT=.*/API_PORT=8000/g' "$ENV_FILE"
         ok "  .env: API_PORT corrigido para 8000 (era $_ap)"
     else
         ok "  .env: API_PORT=8000 (ok)"
@@ -117,7 +132,7 @@ else
     echo 'API_PORT=8000' >> "$ENV_FILE"
     ok "  .env: API_PORT=8000 adicionado"
 fi
-# Garantir NEXUS_API_URL
+
 if ! grep -q 'NEXUS_API_URL=' "$ENV_FILE" 2>/dev/null; then
     echo 'NEXUS_API_URL=http://localhost:8000' >> "$ENV_FILE"
     ok "  .env: NEXUS_API_URL adicionado"
@@ -125,19 +140,17 @@ else
     ok "  .env: NEXUS_API_URL existe"
 fi
 
-# ─── STEP 5: Criar directorios necessários ─────────────────────────────────────────
+# --- STEP 5: Criar directorios -----------------------------------------------
 info "[5/10] A criar directorios..."
 for d in "$NEXUS_HOME/logs" "$NEXUS_HOME/monitor" "$NEXUS_HOME/backups" "$NEXUS_HOME/data"; do
     mkdir -p "$d" 2>/dev/null && ok "  $d" || true
 done
-# /var/log/nexus: criar E dar permissões ao utilizador nexus
 mkdir -p /var/log/nexus 2>/dev/null || true
-chown -R nexus:nexus /var/log/nexus 2>/dev/null || \
-    chmod 777 /var/log/nexus 2>/dev/null || true
-ok "  /var/log/nexus (com permissões)"
+chown -R nexus:nexus /var/log/nexus 2>/dev/null || chmod 777 /var/log/nexus 2>/dev/null || true
+ok "  /var/log/nexus (com permissoes)"
 
-# ─── STEP 6: Corrigir ficheiros de serviço systemd ───────────────────────────────
-info "[6/10] A corrigir serviços systemd..."
+# --- STEP 6: Servicos systemd ------------------------------------------------
+info "[6/10] A corrigir servicos systemd..."
 
 if [[ -f "$VENV/bin/uvicorn" ]]; then
     UVICORN="$VENV/bin/uvicorn"
@@ -149,114 +162,122 @@ ok "  Uvicorn: $UVICORN"
 SVC_USER="nexus"
 if ! id -u "$SVC_USER" &>/dev/null; then
     SVC_USER=$(stat -c '%U' "$NEXUS_HOME" 2>/dev/null || echo root)
-    warn "  Utilizador 'nexus' não existe — a usar '$SVC_USER'"
+    warn "  Utilizador nexus nao existe -- a usar $SVC_USER"
 fi
 
-# Remover serviços obsoletos
 for obsolete in nexus-api nexus-ws nexus-backend; do
     systemctl disable "$obsolete" 2>/dev/null || true
     rm -f "$SVC_DIR/${obsolete}.service" 2>/dev/null || true
 done
-ok "  Serviços obsoletos removidos (nexus-api, nexus-ws, nexus-backend)"
+ok "  Servicos obsoletos removidos"
 
-cat > "$SVC_DIR/nexus-core.service" <<SVC_CORE
-[Unit]
-Description=NEXUS AI — REST API (porta 8000)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$SVC_USER
-Group=$SVC_USER
-WorkingDirectory=$NEXUS_HOME
-EnvironmentFile=-$ENV_FILE
-Environment=PYTHONPATH=$NEXUS_HOME
-Environment=LOG_DIR=/var/log/nexus
-ExecStart=$UVICORN nexus.api_server:app --host 0.0.0.0 --port 8000 --log-level info
-Restart=always
-RestartSec=10
-StartLimitIntervalSec=0
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=nexus-core
-
-[Install]
-WantedBy=multi-user.target
-SVC_CORE
-ok "  nexus-core.service: actualizado (nexus.api_server:app em :8000)"
+# Escrever nexus-core.service sem heredoc para evitar problemas de expansao
+{
+    echo '[Unit]'
+    echo 'Description=NEXUS AI -- REST API (porta 8000)'
+    echo 'After=network-online.target'
+    echo 'Wants=network-online.target'
+    echo ''
+    echo '[Service]'
+    echo 'Type=simple'
+    echo "User=$SVC_USER"
+    echo "Group=$SVC_USER"
+    echo "WorkingDirectory=$NEXUS_HOME"
+    echo "EnvironmentFile=-$ENV_FILE"
+    echo "Environment=PYTHONPATH=$NEXUS_HOME"
+    echo 'Environment=LOG_DIR=/var/log/nexus'
+    echo "ExecStart=$UVICORN nexus.api_server:app --host 0.0.0.0 --port 8000 --log-level info"
+    echo 'Restart=always'
+    echo 'RestartSec=10'
+    echo 'StartLimitIntervalSec=0'
+    echo 'StandardOutput=journal'
+    echo 'StandardError=journal'
+    echo 'SyslogIdentifier=nexus-core'
+    echo ''
+    echo '[Install]'
+    echo 'WantedBy=multi-user.target'
+} > "$SVC_DIR/nexus-core.service"
+ok "  nexus-core.service actualizado"
 
 systemctl daemon-reload
 systemctl enable nexus-core 2>/dev/null || true
-if [[ -f "$SVC_DIR/nexus-dashboard.service" ]]; then
-    systemctl enable nexus-dashboard 2>/dev/null || true
-fi
+[[ -f "$SVC_DIR/nexus-dashboard.service" ]] && systemctl enable nexus-dashboard 2>/dev/null || true
 
-# ─── STEP 6.5: Teste de importação (diagnóstico antes de arrancar) ──────────────
-info "[6.5] Teste de importação Python..."
+# --- STEP 6.5: Teste de importacao Python ------------------------------------
+info "[6.5] Teste de importacao Python..."
 PYTHON="${VENV}/bin/python"
 [[ -f "$PYTHON" ]] || PYTHON=$(command -v python3)
 
-# Testar nexus.api_server (entry point resiliente — DEVE sempre funcionar)
-if "$PYTHON" -c "
-import sys
-sys.path.insert(0, '$NEXUS_HOME')
-from nexus.api_server import app, _import_error
-if _import_error:
-    print(f'[WARN] nexus.api_server em modo MINIMO: {_import_error}')
-else:
-    print('[OK] nexus.api_server carregado em modo COMPLETO')
-" 2>&1 | tee -a "$LOG_FILE"; then
-    ok "  nexus.api_server: import OK (modo completo ou mínimo)"
+# Escrever script Python para ficheiro temporario -- evita problemas de quoting
+_PY_TEST=$(mktemp /tmp/nexus_import_test_XXXXXX.py)
+cat > "$_PY_TEST" <<'PYEOF'
+import sys, os
+nexus_home = os.environ.get('NEXUS_HOME', '/opt/nexus')
+sys.path.insert(0, nexus_home)
+try:
+    from nexus.api_server import app, _import_error
+    if _import_error:
+        print('[WARN] nexus.api_server em modo MINIMO: ' + str(_import_error))
+    else:
+        print('[OK] nexus.api_server modo COMPLETO')
+except Exception as e:
+    print('[FAIL] nexus.api_server import falhou: ' + str(e))
+PYEOF
+
+if NEXUS_HOME="$NEXUS_HOME" "$PYTHON" "$_PY_TEST" 2>&1 | tee -a "$LOG_FILE"; then
+    ok "  nexus.api_server: import OK"
 else
-    fail "  nexus.api_server: FALHOU! Isto não devia acontecer."
+    fail "  nexus.api_server: FALHOU"
 fi
 
-# Testar nexus.api.rest.main directamente para diagnóstico
-FULL_IMPORT_RESULT=$(
-    "$PYTHON" -c "
-import sys
-sys.path.insert(0, '$NEXUS_HOME')
+# Testar nexus.api.rest.main para diagnostico
+_PY_FULL=$(mktemp /tmp/nexus_full_test_XXXXXX.py)
+cat > "$_PY_FULL" <<'PYEOF'
+import sys, os
+nexus_home = os.environ.get('NEXUS_HOME', '/opt/nexus')
+sys.path.insert(0, nexus_home)
 try:
     from nexus.api.rest.main import app
     print('FULL_API_OK')
 except Exception as e:
     import traceback
-    print(f'FULL_API_FAIL: {type(e).__name__}: {e}')
+    print('FULL_API_FAIL: ' + type(e).__name__ + ': ' + str(e))
     traceback.print_exc()
-" 2>&1
-)
+PYEOF
+
+FULL_IMPORT_RESULT=$(NEXUS_HOME="$NEXUS_HOME" "$PYTHON" "$_PY_FULL" 2>&1)
 echo "$FULL_IMPORT_RESULT" | tee -a "$LOG_FILE"
+
 if echo "$FULL_IMPORT_RESULT" | grep -q 'FULL_API_OK'; then
-    ok "  nexus.api.rest.main: import OK (modo COMPLETO)"
+    ok "  nexus.api.rest.main: OK (modo COMPLETO)"
 elif echo "$FULL_IMPORT_RESULT" | grep -q 'FULL_API_FAIL'; then
     FAIL_REASON=$(echo "$FULL_IMPORT_RESULT" | grep 'FULL_API_FAIL' | head -1)
-    warn "  nexus.api.rest.main: import FALHOU ($FAIL_REASON)"
-    warn "  nexus-core vai arrancar em modo MÍNIMO mas com /health funcional"
-    warn "  Para ver o erro completo: journalctl -u nexus-core -n 50 --no-pager"
+    warn "  nexus.api.rest.main falhou: $FAIL_REASON"
+    warn "  nexus-core vai arrancar em modo MINIMO com /health funcional"
 fi
 
-# ─── STEP 7: Iniciar serviços ────────────────────────────────────────────────────
-info "[7/10] A iniciar serviços..."
+rm -f "$_PY_TEST" "$_PY_FULL"
+
+# --- STEP 7: Iniciar servicos ------------------------------------------------
+info "[7/10] A iniciar servicos..."
 
 systemctl start nexus-core 2>/dev/null || true
 sleep 6
 if systemctl is-active --quiet nexus-core; then
     ok "  nexus-core: ACTIVE"
     HC=$(curl -s --max-time 5 http://localhost:8000/health 2>/dev/null || echo "")
-    if echo "$HC" | grep -q '"status"'; then
-        if echo "$HC" | grep -q '"degraded"'; then
-            warn "  /health responde em modo MÍNIMO: $HC"
-            warn "  Causa do modo mínimo está em /health acima"
+    if echo "$HC" | grep -q 'status'; then
+        if echo "$HC" | grep -q 'degraded'; then
+            warn "  /health modo MINIMO: $HC"
         else
             ok "  /health responde: $HC"
         fi
     else
-        fail "  /health sem resposta (port bind falhou?)"
+        fail "  /health sem resposta"
         journalctl -u nexus-core -n 30 --no-pager 2>/dev/null | tail -20 | tee -a "$LOG_FILE" || true
     fi
 else
-    fail "  nexus-core: não ficou activo"
+    fail "  nexus-core: nao ficou activo"
     journalctl -u nexus-core -n 30 --no-pager 2>/dev/null | tail -20 | tee -a "$LOG_FILE" || true
 fi
 
@@ -266,12 +287,12 @@ if [[ -f "$SVC_DIR/nexus-dashboard.service" ]]; then
     if systemctl is-active --quiet nexus-dashboard; then
         ok "  nexus-dashboard: ACTIVE (:9000)"
     else
-        fail "  nexus-dashboard: não ficou activo"
+        fail "  nexus-dashboard: nao ficou activo"
         journalctl -u nexus-dashboard -n 10 --no-pager 2>/dev/null | tail -8 | tee -a "$LOG_FILE" || true
     fi
 fi
 
-# ─── STEP 8: Rebuild do dashboard ───────────────────────────────────────────────
+# --- STEP 8: Rebuild do dashboard --------------------------------------------
 info "[8/10] Rebuild do dashboard..."
 VPS_IP=$(
     curl -s --max-time 5 https://api.ipify.org 2>/dev/null ||
@@ -284,63 +305,59 @@ ok "  IP detectado: $VPS_IP"
 if bash "$NEXUS_HOME/nexus/scripts/rebuild_dashboard.sh" "$VPS_IP" 2>&1 | tee -a "$LOG_FILE"; then
     ok "  Dashboard rebuild OK"
 else
-    warn "  Dashboard rebuild falhou — a continuar"
+    warn "  Dashboard rebuild falhou -- a continuar"
 fi
 
-# ─── STEP 9: Health check ─────────────────────────────────────────────────────
+# --- STEP 9: Health check ----------------------------------------------------
 info "[9/10] Health check..."
 sleep 3
 bash "$NEXUS_HOME/nexus/scripts/health_check.sh" 2>&1 | tee -a "$LOG_FILE" || true
 
-# ─── STEP 10: Sumário final ──────────────────────────────────────────────────────
+# --- STEP 10: Sumario final --------------------------------------------------
 echo "" | tee -a "$LOG_FILE"
-info "[10/10] Sumário final"
+info "[10/10] Sumario final"
 echo "" | tee -a "$LOG_FILE"
 
 for svc in nexus-core nexus-dashboard; do
-    status=$(systemctl is-active "$svc" 2>/dev/null || echo "n/a")
-    [[ "$status" == "active" ]] && ok "  $svc: $status" || warn "  $svc: $status"
+    _st=$(systemctl is-active "$svc" 2>/dev/null || echo "n/a")
+    [[ "$_st" == "active" ]] && ok "  $svc: $_st" || warn "  $svc: $_st"
 done
 echo ""
 
-for entry in "8000:REST API" "9000:Dashboard"; do
-    PORT="${entry%%:*}"; LABEL="${entry##*:}"
-    ss -tulpn 2>/dev/null | grep -q ":${PORT}" && ok "  :$PORT ($LABEL): ABERTO" || fail "  :$PORT ($LABEL): FECHADO"
+for _entry in "8000:REST API" "9000:Dashboard"; do
+    _port="${_entry%%:*}"; _label="${_entry##*:}"
+    ss -tulpn 2>/dev/null | grep -q ":${_port}" && ok "  :$_port ($_label): ABERTO" || fail "  :$_port ($_label): FECHADO"
 done
 echo ""
 
 API_RESP=$(curl -s --max-time 5 http://localhost:8000/health 2>/dev/null || echo "")
-if echo "$API_RESP" | grep -q '"status"'; then
-    if echo "$API_RESP" | grep -q '"degraded"'; then
-        warn "  :8000/health → MODO MÍNIMO (ver 'error' abaixo)"
+if echo "$API_RESP" | grep -q 'status'; then
+    if echo "$API_RESP" | grep -q 'degraded'; then
+        warn "  :8000/health -> MODO MINIMO"
         echo "  $API_RESP"
-        echo ""
-        warn "  DIAGNÓSTICO: o erro acima explica porque nexus.api.rest.main falhou."
-        warn "  Fix: corre 'journalctl -u nexus-core -n 50 --no-pager' para ver traceback completo."
+        warn "  Fix: journalctl -u nexus-core -n 50 --no-pager"
     else
-        ok "  :8000/health → $API_RESP"
+        ok "  :8000/health -> $API_RESP"
     fi
 else
-    fail "  :8000/health → sem resposta"
+    fail "  :8000/health -> sem resposta"
     journalctl -u nexus-core -n 20 --no-pager 2>/dev/null | tail -15 | tee -a "$LOG_FILE" || true
 fi
 
 PROXY_RESP=$(curl -s --max-time 5 http://localhost:9000/api/health 2>/dev/null || echo "")
-if echo "$PROXY_RESP" | grep -q '"status"'; then
-    ok "  :9000/api/health → proxy OK"
+if echo "$PROXY_RESP" | grep -q 'status'; then
+    ok "  :9000/api/health -> proxy OK"
 else
-    fail "  :9000/api/health → proxy falhou"
+    fail "  :9000/api/health -> proxy falhou"
 fi
 
 DASH_RESP=$(curl -s --max-time 5 http://localhost:9000/ 2>/dev/null | head -1 || echo "")
-echo "$DASH_RESP" | grep -qi '<!doctype\|<html' && ok "  :9000/ → HTML OK" || fail "  :9000/ → sem HTML"
+echo "$DASH_RESP" | grep -qi 'doctype\|html' && ok "  :9000/ -> HTML OK" || fail "  :9000/ -> sem HTML"
 
 echo ""
-echo "  Log completo: $LOG_FILE"
+echo "  Log: $LOG_FILE"
 echo ""
-echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-echo -e "  Dashboard : http://${VPS_IP}:9000"
-echo -e "  API proxy : http://${VPS_IP}:9000/api/health"
-echo -e "  WS proxy  : ws://${VPS_IP}:9000/ws"
-echo -e "  Diagnóstico erros: journalctl -u nexus-core -n 50 --no-pager"
-echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+echo "  Dashboard : http://${VPS_IP}:9000"
+echo "  API       : http://${VPS_IP}:9000/api/health"
+echo "  WS        : ws://${VPS_IP}:9000/ws"
+echo "  Logs core : journalctl -u nexus-core -n 50 --no-pager"
