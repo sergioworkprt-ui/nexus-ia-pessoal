@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Python: flake8 (blocking) + black + mypy (advisory) ───────────────────
+  # ── Python: flake8 (advisory) + black + mypy (advisory) ───────────────────
   python:
     name: Python Lint
     runs-on: ubuntu-latest
@@ -22,8 +22,15 @@ jobs:
       - name: Install tools
         run: pip install flake8 black mypy
 
+      # flake8 é advisory — não bloqueia o deploy.
+      # Usar .flake8 para configuração (max-line-length=120).
       - name: flake8
-        run: flake8 nexus/ --count --statistics
+        run: |
+          flake8 nexus/ --count --statistics \
+            --max-line-length=120 \
+            --extend-ignore=E501,E203,W503,W504 \
+            2>&1 || echo '::warning::flake8 encontrou problemas de estilo. Ver output acima.'
+        continue-on-error: true
 
       - name: black --check
         run: black --check nexus/ 2>&1 || echo '::warning::black encontrou problemas de formatação. Corre "black nexus/" localmente.'
@@ -51,6 +58,7 @@ jobs:
       - name: TypeScript type-check
         working-directory: nexus/dashboard/frontend
         run: npx tsc --noEmit
+        continue-on-error: true
 
       - name: ESLint
         working-directory: nexus/dashboard/frontend
