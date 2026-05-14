@@ -51,6 +51,31 @@ class Orchestrator:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         log.info("Orchestrator pronto (%d modulos)", len(self._modules))
+        log.info("Modulos registados: %s", list(self._modules.keys()))
+
+    async def _ensure_video_analysis(self) -> Optional[Any]:
+        """Lazy load do modulo video_analysis.
+
+        Se o modulo nao foi registado no startup (import falhou silenciosamente),
+        tenta importar e registar agora. Armazena para re-uso em chamadas seguintes.
+        """
+        video = self.get("video_analysis")
+        if video is not None:
+            return video
+        log.warning("[video] video_analysis nao registado — a tentar lazy load...")
+        try:
+            from nexus.modules.video_analysis.video_analysis import VideoAnalysis  # noqa: PLC0415
+            video = VideoAnalysis()
+            try:
+                await asyncio.wait_for(video.start(), timeout=5.0)
+            except Exception as exc:
+                log.warning("[video] lazy start() aviso: %s", exc)
+            self.register("video_analysis", video)
+            log.info("[video] video_analysis carregado via lazy load")
+            return video
+        except Exception as exc:
+            log.error("[video] lazy load falhou: %s", exc, exc_info=True)
+            return None
 
     async def process(self, user_input: str) -> str:
         """Pipeline completo com try/except por etapa — sempre devolve PT-PT."""
@@ -62,12 +87,12 @@ class Orchestrator:
 
             # 0. Detectar URL YouTube → pipeline de video
             if _YT_DOMAIN_RE.search(user_input):
-                video = self.get("video_analysis")
+                video = await self._ensure_video_analysis()
                 if video:
                     try:
                         urls = _YT_URL_RE.findall(user_input)
                         url = urls[0] if urls else user_input.strip()
-                        log.info("[process] YouTube URL detectado: %s", url)
+                        log.info("[process] YouTube URL: %s", url)
                         if memory:
                             try:
                                 memory.add(role="user", content=user_input)
@@ -84,6 +109,8 @@ class Orchestrator:
                     except Exception as exc:
                         log.error("[process] video_analysis erro: %s", exc, exc_info=True)
                         return "Ocorreu um erro ao analisar o video. Tenta novamente."
+                else:
+                    log.warning("[process] video_analysis indisponivel — a processar como texto")
 
             # 1. Validacao de seguranca
             security = self.get("security")

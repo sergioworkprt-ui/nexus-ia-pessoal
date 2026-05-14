@@ -8,12 +8,12 @@ Porta WS  : WS_PORT   (default 8801)  — thread dedicada, loop próprio
 from __future__ import annotations
 import asyncio, json, logging, os, signal, sys, threading
 
-# ─ PYTHONPATH auto-fix ────────────────────────────────────────────
+# ─ PYTHONPATH auto-fix ──────────────────────────────────────────────────
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-# ─ .env ────────────────────────────────────────────────────────
+# ─ .env ──────────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
     _ep = os.path.join(_ROOT, ".env")
@@ -21,7 +21,7 @@ try:
         load_dotenv(_ep)
         print(f"[NEXUS] .env carregado de {_ep}", flush=True)
 except ImportError:
-    print("[NEXUS] AVISO: python-dotenv não instalado", flush=True)
+    print("[NEXUS] AVISO: python-dotenv nao instalado", flush=True)
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(name)s] %(levelname)s  %(message)s")
@@ -29,7 +29,7 @@ log = logging.getLogger("nexus.main")
 
 import uvicorn
 
-# ─ Modo COMPLETO / MÍNIMO ──────────────────────────────────────────
+# ─ Modo COMPLETO / MÍNIMO ────────────────────────────────────────────────
 _FULL = False
 try:
     from nexus.api.rest.main import app, set_nexus          # type: ignore
@@ -37,7 +37,7 @@ try:
     _FULL = True
     log.info("Modo COMPLETO: nexus.api.rest.main + Orchestrator carregados")
 except Exception as _e:
-    log.warning("Modo MÍNIMO (módulos completos indisponíveis: %s)", _e)
+    log.warning("Modo MINIMO (modulos completos indisponiveis: %s)", _e)
     from fastapi import FastAPI, WebSocket as _FWS
     from fastapi.middleware.cors import CORSMiddleware
     app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs")  # type: ignore
@@ -78,8 +78,7 @@ except Exception as _e:
     def set_nexus(_): pass  # type: ignore  # noqa: E301
 
 
-# ─ WebSocket server — thread dedicada com event loop próprio ───────────────────
-# Porta default 8801 (alinhada com rebuild_dashboard.sh e o frontend Vite)
+# ─ WebSocket server — thread dedicada com event loop próprio ──────────────────────────
 def _ws_server_thread(h: str, p: int) -> None:
     """Corre num thread daemon — event loop completamente isolado do uvicorn."""
     print(f"[NEXUS WS] thread iniciada — host={h} port={p} python={sys.executable}",
@@ -102,7 +101,7 @@ def _ws_server_thread(h: str, p: int) -> None:
             log.info("[WS] start_ws() cancelado")
             return
         except OSError as ex:
-            log.warning("[WS] start_ws() OSError (porta %d já em uso?): %s", p, ex)
+            log.warning("[WS] start_ws() OSError (porta %d ja em uso?): %s", p, ex)
             return
         except Exception:
             log.exception("[WS] nexus.ws_server.start_ws() falhou — fallback inline")
@@ -129,7 +128,7 @@ def _ws_server_thread(h: str, p: int) -> None:
 
         except ImportError as ex:
             log.error(
-                "[WS] ERRO FATAL: websockets não instalado.\n"
+                "[WS] ERRO FATAL: websockets nao instalado.\n"
                 "  Python : %s\n  Erro   : %s\n"
                 "  Fix    : %s -m pip install 'websockets>=10'",
                 sys.executable, ex, sys.executable,
@@ -155,9 +154,9 @@ def _ws_server_thread(h: str, p: int) -> None:
 
 def _launch_ws_thread() -> None:
     h = os.getenv("WS_HOST", "0.0.0.0")
-    p = int(os.getenv("WS_PORT", "8801"))  # default 8801 — alinhado com frontend
-    print(f"[NEXUS WS] a lançar thread — host={h} port={p}", flush=True)
-    log.info("[WS] a lançar thread — host=%s port=%d", h, p)
+    p = int(os.getenv("WS_PORT", "8801"))
+    print(f"[NEXUS WS] a lancar thread — host={h} port={p}", flush=True)
+    log.info("[WS] a lancar thread — host=%s port=%d", h, p)
     t = threading.Thread(
         target=_ws_server_thread,
         args=(h, p),
@@ -165,10 +164,10 @@ def _launch_ws_thread() -> None:
         daemon=True,
     )
     t.start()
-    log.info("[WS] thread lançada (id=%s name=%s daemon=%s)", t.ident, t.name, t.daemon)
+    log.info("[WS] thread lancada (id=%s name=%s daemon=%s)", t.ident, t.name, t.daemon)
 
 
-# ─ Módulos opcionais (modo completo) ─────────────────────────────────
+# ─ Modulos opcionais (modo completo) ───────────────────────────────────────────
 _MODS = [
     ("memory",         "nexus.core.memory.memory",                   "Memory"),
     ("personality",    "nexus.core.personality.personality",          "Personality"),
@@ -190,16 +189,16 @@ _MODS = [
 def _load(lbl, fn):
     try:
         r = fn()
-        log.info("  ✓ %s", lbl)
+        log.info("  ok %s", lbl)
         return r
     except Exception as e:
-        log.warning("  ✗ %s: %s", lbl, e)
+        log.warning("  falhou %s: %s", lbl, e)
         return None
 
 
-# ─ Main ────────────────────────────────────────────────────────
+# ─ Main ──────────────────────────────────────────────────────────────
 async def main() -> None:
-    log.info("═══ NEXUS v2 a iniciar (%s) ═══", "COMPLETO" if _FULL else "MÍNIMO")
+    log.info("=== NEXUS v2 a iniciar (%s) ===", "COMPLETO" if _FULL else "MINIMO")
     log.info("Python: %s", sys.executable)
 
     # Arrancar WS ANTES do event loop do uvicorn — thread dedicada
@@ -228,6 +227,13 @@ async def main() -> None:
                 "TradingModule")(s))
             if tm:
                 _nexus.register("trading", tm)
+
+        # Garantir video_analysis registado (diagnostico explícito)
+        if _nexus.get("video_analysis"):
+            log.info("video_analysis: registado com sucesso")
+        else:
+            log.warning("video_analysis: NAO registado no startup (lazy load activo)")
+
         set_nexus(_nexus)  # type: ignore
 
     cfg    = uvicorn.Config(app, host=ah, port=ap, log_level="info", access_log=True)
