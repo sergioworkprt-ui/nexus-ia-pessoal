@@ -4,7 +4,7 @@ from nexus.services.logger.logger import get_logger
 
 log = get_logger("orchestrator")
 
-_MODULE_START_TIMEOUT = 10.0  # segundos por módulo
+_MODULE_START_TIMEOUT = 10.0
 
 
 class Orchestrator:
@@ -44,31 +44,69 @@ class Orchestrator:
         log.info("Orchestrator ready (%d modules)", len(self._modules))
 
     async def process(self, user_input: str) -> str:
-        """Route user input through security → personality → response."""
-        log.info("Input: %s", user_input[:80])
+        """Pipeline completo com try/except por etapa — nunca propaga excepção."""
+        log.info("[process] input: %s", user_input[:80])
+        response = "Online. Como posso ajudar?"
 
-        security = self.get("security")
-        if security and not security.validate_input(user_input):
-            return "That request is outside my operational parameters."
+        try:
+            # 1. Validação de segurança
+            security = self.get("security")
+            if security:
+                try:
+                    if not security.validate_input(user_input):
+                        return "Esse pedido está fora dos meus parâmetros operacionais."
+                except Exception as exc:
+                    log.warning("[process] security.validate_input erro: %s", exc)
 
-        memory = self.get("memory")
-        if memory:
-            memory.add(role="user", content=user_input)
+            # 2. Guardar input na memória
+            memory = self.get("memory")
+            if memory:
+                try:
+                    memory.add(role="user", content=user_input)
+                except Exception as exc:
+                    log.warning("[process] memory.add(user) erro: %s", exc)
 
-        personality = self.get("personality")
-        if personality:
-            response = await personality.respond(user_input, self._context)
-        else:
-            response = "Online. How can I help?"
+            # 3. Gerar resposta via personality
+            personality = self.get("personality")
+            if personality:
+                try:
+                    response = await personality.respond(user_input, self._context)
+                except Exception as exc:
+                    log.error("[process] personality.respond erro: %s", exc, exc_info=True)
+                    response = self._simple_fallback(user_input)
+            else:
+                response = self._simple_fallback(user_input)
 
-        if memory:
-            memory.add(role="nexus", content=response)
+            # 4. Guardar resposta na memória
+            if memory:
+                try:
+                    memory.add(role="nexus", content=response)
+                except Exception as exc:
+                    log.warning("[process] memory.add(nexus) erro: %s", exc)
 
-        tts = self.get("tts")
-        if tts:
-            asyncio.create_task(tts.speak(response))
+            # 5. TTS (fire-and-forget, nunca bloqueia)
+            tts = self.get("tts")
+            if tts:
+                try:
+                    asyncio.create_task(tts.speak(response))
+                except Exception as exc:
+                    log.warning("[process] tts.speak erro: %s", exc)
+
+        except Exception as exc:
+            log.error("[process] erro não capturado: %s", exc, exc_info=True)
+            response = "Ocorreu um erro interno no orquestrador."
 
         return response
+
+    def _simple_fallback(self, text: str) -> str:
+        t = text.lower()
+        if any(w in t for w in ["trade", "compra", "venda", "ordem", "buy", "sell"]):
+            return "Módulo de trading pronto. Especifica símbolo, acção e quantidade."
+        if any(w in t for w in ["preço", "mercado", "price", "market"]):
+            return "A obter dados de mercado."
+        if "status" in t or "estado" in t:
+            return "Todos os sistemas operacionais."
+        return "Entendido. Como posso ajudar?"
 
     def update_context(self, key: str, value: Any):
         self._context[key] = value

@@ -33,15 +33,19 @@ class Memory:
         log.info("Memory cleared")
 
     def _save(self):
-        os.makedirs(os.path.dirname(self._file) or ".", exist_ok=True)
-        with open(self._file, "w") as f:
-            json.dump(self._short, f, indent=2)
+        try:
+            dir_part = os.path.dirname(self._file) or "."
+            os.makedirs(dir_part, exist_ok=True)
+            with open(self._file, "w") as f:
+                json.dump(self._short, f, indent=2)
+        except Exception as exc:
+            log.warning("Memory._save falhou (%s) — entries mantidos em RAM", exc)
 
     def _load(self):
         if os.path.exists(self._file):
             try:
                 with open(self._file) as f:
                     self._short = json.load(f)
-                log.info(f"Loaded {len(self._short)} memory entries")
+                log.info("Loaded %d memory entries", len(self._short))
             except Exception:
                 self._short = []
