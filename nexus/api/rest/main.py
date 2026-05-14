@@ -3,6 +3,7 @@ from __future__ import annotations
 import json as _json
 import os
 import time as _time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, Any
 import psutil
@@ -14,43 +15,8 @@ from nexus.api.websocket.ws import ws_endpoint, manager
 from nexus.services.logger.logger import get_logger
 
 log = get_logger("api")
-app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs")
 
-# CORS: permite qualquer origem — não usar allow_credentials=True com allow_origins=["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    max_age=3600,
-)
-
-# ── HTTP middleware: Prometheus counters + structured log ─────────────────────────────────
-try:
-    from nexus.api.rest import prometheus_metrics as _prom
-    from nexus.services.logger.structured import http_logging_middleware
-
-    @app.middleware("http")
-    async def _http_mw(request: Request, call_next):
-        return await http_logging_middleware(request, call_next, record_fn=_prom.record_request)
-except Exception as _e:
-    log.warning("Metrics/logging middleware unavailable: %s", _e)
-
-# ── Extra routers ──────────────────────────────────────────────────────────────────────────
-try:
-    from nexus.api.rest.automation import router as _automation_router
-    app.include_router(_automation_router)
-except Exception as _e:
-    log.warning("Automation API unavailable: %s", _e)
-
-try:
-    from nexus.api.rest.prometheus_metrics import router as _prom_router
-    app.include_router(_prom_router)
-except Exception as _e:
-    log.warning("Prometheus router unavailable: %s", _e)
-
-# ── Internal vars ──────────────────────────────────────────────────────────────────────────
+# ── Internal vars ─────────────────────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
 _nexus = None
 _LOG_DIR = Path(os.getenv("LOG_DIR", "/var/log/nexus"))
@@ -58,6 +24,23 @@ _SETTINGS_PATH = Path("/data/nexus/settings.json")
 _NEXUS_HOME = Path(os.getenv("NEXUS_HOME", "/opt/nexus"))
 _MONITOR_DIR = _NEXUS_HOME / "monitor"
 _AUTOHEAL_STATE = _NEXUS_HOME / "autoheal_state.json"
+
+_MODS = [
+    ("memory",         "nexus.core.memory.memory",                   "Memory"),
+    ("personality",    "nexus.core.personality.personality",          "Personality"),
+    ("security",       "nexus.core.security.security",                "SecurityManager"),
+    ("tts",            "nexus.core.voice.tts",                        "TTS"),
+    ("ml",             "nexus.modules.ml.ml",                         "MLModule"),
+    ("watchdog",       "nexus.modules.watchdog.watchdog",             "Watchdog"),
+    ("tasks",          "nexus.modules.tasks.tasks",                   "TaskManager"),
+    ("learning",       "nexus.modules.learning.learning",             "LearningModule"),
+    ("video_analysis", "nexus.modules.video_analysis.video_analysis", "VideoAnalysis"),
+    ("evolution",      "nexus.modules.evolution.evolution",           "Evolution"),
+    ("truth_checker",  "nexus.modules.truth_checker.truth_checker",   "TruthChecker"),
+    ("xtb",            "nexus.modules.trading.xtb.xtb_client",        "XTBClient"),
+    ("ibkr",           "nexus.modules.trading.ibkr.ibkr_client",      "IBKRClient"),
+    ("scheduler",      "nexus.services.scheduler.scheduler",          "Scheduler"),
+]
 
 
 def set_nexus(n: Any):
@@ -85,7 +68,96 @@ def _mod(name: str):
     return m
 
 
-# ── Models ──────────────────────────────────────────────────────────────────────────
+# ── Lifespan: inicializa o Orchestrator no startup do uvicorn ─────────────────
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    """Inicializa Orchestrator NEXUS quando uvicorn arranca o app."""
+    global _nexus
+    try:
+        from nexus.core.orchestrator.orchestrator import Orchestrator  # type: ignore
+        instance = Orchestrator()
+        loaded: list[str] = []
+
+        for name, mod_path, class_name in _MODS:
+            try:
+                cls = getattr(__import__(mod_path, fromlist=[class_name]), class_name)
+                instance.register(name, cls())
+                loaded.append(name)
+            except Exception as exc:
+                log.warning("[startup] módulo '%s' indisponível: %s", name, exc)
+
+        # trading precisa do módulo security já carregado
+        sec = instance.get("security")
+        if sec:
+            try:
+                from nexus.modules.trading.trading import TradingModule  # type: ignore
+                instance.register("trading", TradingModule(sec))
+                loaded.append("trading")
+            except Exception as exc:
+                log.warning("[startup] módulo 'trading' indisponível: %s", exc)
+
+        # stt precisa do nexus.process como callback de wake word
+        try:
+            from nexus.core.voice.stt import STT  # type: ignore
+            instance.register("stt", STT(on_wake=instance.process))
+            loaded.append("stt")
+        except Exception as exc:
+            log.warning("[startup] módulo 'stt' indisponível: %s", exc)
+
+        await instance.start()
+        set_nexus(instance)
+        log.info("[startup] Orchestrator iniciado — módulos activos: %s", loaded)
+    except Exception as exc:
+        log.error(
+            "[startup] Orchestrator falhou (%s) — a continuar sem orquestrador", exc
+        )
+    yield
+    if _nexus:
+        try:
+            await _nexus.stop()
+        except Exception:
+            pass
+
+
+# ── App ───────────────────────────────────────────────────────────────────────
+app = FastAPI(title="NEXUS API", version="2.0.0", docs_url="/docs", lifespan=_lifespan)
+
+# CORS: permite qualquer origem — não usar allow_credentials=True com allow_origins=["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+    max_age=3600,
+)
+
+# ── HTTP middleware: Prometheus counters + structured log ─────────────────────
+try:
+    from nexus.api.rest import prometheus_metrics as _prom
+    from nexus.services.logger.structured import http_logging_middleware
+
+    @app.middleware("http")
+    async def _http_mw(request: Request, call_next):
+        return await http_logging_middleware(request, call_next, record_fn=_prom.record_request)
+except Exception as _e:
+    log.warning("Metrics/logging middleware unavailable: %s", _e)
+
+# ── Extra routers ──────────────────────────────────────────────────────────────
+try:
+    from nexus.api.rest.automation import router as _automation_router
+    app.include_router(_automation_router)
+except Exception as _e:
+    log.warning("Automation API unavailable: %s", _e)
+
+try:
+    from nexus.api.rest.prometheus_metrics import router as _prom_router
+    app.include_router(_prom_router)
+except Exception as _e:
+    log.warning("Prometheus router unavailable: %s", _e)
+
+
+# ── Models ────────────────────────────────────────────────────────────────────
 class ChatReq(BaseModel):
     message: str
     mode: str = "normal"
@@ -133,7 +205,7 @@ class RealEnableReq(BaseModel):
 # ── Health / Status ───────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "2.0.0", "nexus_ready": _nexus is not None}
 
 
 @app.get("/status", dependencies=[Depends(_auth)])
@@ -155,13 +227,13 @@ def status():
     }
 
 
-# ── Chat ──────────────────────────────────────────────────────────────────────────────
+# ── Chat ──────────────────────────────────────────────────────────────────────
 @app.post("/chat")
 async def chat(req: ChatReq):
     if not _nexus:
         return {
             "response": (
-                f"Olá! Recebi a tua mensagem: “{req.message}” — "
+                f"Olá! Recebi a tua mensagem: \"{req.message}\" — "
                 "mas o orquestrador NEXUS não está activo neste momento. "
                 "O chat completo requer o nexus-core em execução. "
                 "Verifica: systemctl status nexus-core"
@@ -172,7 +244,7 @@ async def chat(req: ChatReq):
     return {"response": await _nexus.process(req.message), "mode": req.mode, "nexus_ready": True}
 
 
-# ── Memory ────────────────────────────────────────────────────────────────────────
+# ── Memory ────────────────────────────────────────────────────────────────────
 @app.get("/memory", dependencies=[Depends(_auth)])
 def get_memory(n: int = 50):
     return {"entries": _mod("memory").get_recent(n)}
@@ -186,7 +258,7 @@ def clear_memory():
     return {"status": "cleared"}
 
 
-# ── Tasks ──────────────────────────────────────────────────────────────────────────────
+# ── Tasks ─────────────────────────────────────────────────────────────────────
 @app.get("/tasks", dependencies=[Depends(_auth)])
 def list_tasks(status: Optional[str] = None, type_: Optional[str] = None):
     return {"tasks": _mod("tasks").list_tasks(status=status, type_=type_)}
@@ -208,7 +280,7 @@ def delete_task(tid: str):
     return {"status": "deleted"}
 
 
-# ── Learning ───────────────────────────────────────────────────────────────────────────
+# ── Learning ──────────────────────────────────────────────────────────────────
 @app.post("/learning/multi", dependencies=[Depends(_auth)])
 async def learning_multi(req: LearningReq):
     return {"answers": await _mod("learning").multi_query(req.question)}
@@ -222,13 +294,13 @@ def learning_providers():
     return {"providers": _mod("learning").available_providers()}
 
 
-# ── Video Analysis ────────────────────────────────────────────────────────────────────
+# ── Video Analysis ────────────────────────────────────────────────────────────
 @app.post("/video/analyze", dependencies=[Depends(_auth)])
 async def video_analyze(req: VideoReq):
     return await _mod("video_analysis").analyze(req.url, req.mode)
 
 
-# ── Evolution ──────────────────────────────────────────────────────────────────────────────
+# ── Evolution ─────────────────────────────────────────────────────────────────
 @app.post("/evolution/propose", dependencies=[Depends(_auth)])
 async def evolution_propose(req: EvolveReq):
     return await _mod("evolution").propose(req.description, req.target_file)
@@ -254,13 +326,13 @@ async def evolution_apply(pid: str):
     return await _mod("evolution").apply(pid)
 
 
-# ── Truth Checker ──────────────────────────────────────────────────────────────────────
+# ── Truth Checker ─────────────────────────────────────────────────────────────
 @app.post("/truth/check", dependencies=[Depends(_auth)])
 async def truth_check(req: TruthReq):
     return await _mod("truth_checker").check(req.claim)
 
 
-# ── Trading — XTB ──────────────────────────────────────────────────────────────────
+# ── Trading — XTB ─────────────────────────────────────────────────────────────
 @app.get("/trading/xtb/status", dependencies=[Depends(_auth)])
 def xtb_status(): return _mod("xtb").status()
 
@@ -277,7 +349,7 @@ async def xtb_order(req: OrderReqXTB):
     return await _mod("xtb").place_order(req.symbol, req.cmd, req.volume, req.sl, req.tp, req.price)
 
 
-# ── Trading — IBKR ──────────────────────────────────────────────────────────────────
+# ── Trading — IBKR ────────────────────────────────────────────────────────────
 @app.get("/trading/ibkr/status", dependencies=[Depends(_auth)])
 def ibkr_status(): return _mod("ibkr").status()
 
@@ -304,7 +376,7 @@ def enable_real(req: RealEnableReq):
     return {"authorized": ok, "warning": "Real money at risk" if ok else "Invalid code"}
 
 
-# ── Security ────────────────────────────────────────────────────────────────────────────
+# ── Security ──────────────────────────────────────────────────────────────────
 @app.post("/security/pin/verify")
 def pin_verify(req: PinReq):
     sec = _mod("security")
@@ -323,7 +395,7 @@ def security_status():
     return _mod("security").status()
 
 
-# ── Monitor ────────────────────────────────────────────────────────────────────────────
+# ── Monitor ───────────────────────────────────────────────────────────────────
 @app.get("/monitor/metrics", dependencies=[Depends(_auth)])
 def monitor_metrics():
     try:
@@ -389,7 +461,7 @@ def monitor_scale():
             "recommendations": latest.get("recommendations", []) if latest else []}
 
 
-# ── Logs ────────────────────────────────────────────────────────────────────────────────
+# ── Logs ──────────────────────────────────────────────────────────────────────
 @app.get("/logs/{service}", dependencies=[Depends(_auth)])
 def get_logs(service: str, lines: int = 100):
     allowed = {"api", "core", "dashboard", "audit"}
@@ -402,7 +474,7 @@ def get_logs(service: str, lines: int = 100):
     return {"lines": all_lines[-lines:], "total": len(all_lines)}
 
 
-# ── Settings ────────────────────────────────────────────────────────────────────────────
+# ── Settings ──────────────────────────────────────────────────────────────────
 @app.get("/settings", dependencies=[Depends(_auth)])
 def get_settings():
     try:
@@ -424,7 +496,7 @@ def update_settings(body: dict):
     return {"status": "saved", "settings": existing}
 
 
-# ── Legacy ──────────────────────────────────────────────────────────────────────────────────
+# ── Legacy ────────────────────────────────────────────────────────────────────
 @app.get("/positions", dependencies=[Depends(_auth)])
 async def legacy_positions():
     t = _nexus.get("trading") if _nexus else None
@@ -433,7 +505,7 @@ async def legacy_positions():
     return {"orders": t.get_orders() if hasattr(t, 'get_orders') else []}
 
 
-# ── WebSocket ────────────────────────────────────────────────────────────────────────────
+# ── WebSocket ─────────────────────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws_endpoint(ws, _nexus)
