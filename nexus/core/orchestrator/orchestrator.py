@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Any, Dict, Optional
 from nexus.services.logger.logger import get_logger
 
@@ -7,9 +8,12 @@ log = get_logger("orchestrator")
 _MODULE_START_TIMEOUT = 10.0
 
 # Mensagens de sistema — sempre PT-PT
-_MSG_BLOCKED   = "Esse pedido está fora dos meus parâmetros operacionais."
-_MSG_FALLBACK  = "Entendido. Como posso ajudar?"
-_MSG_ERROR     = "Ocorreu um erro interno no orquestrador. Tenta novamente."
+_MSG_BLOCKED  = "Esse pedido esta fora dos meus parametros operacionais."
+_MSG_FALLBACK = "Entendido. Como posso ajudar?"
+_MSG_ERROR    = "Ocorreu um erro interno no orquestrador. Tenta novamente."
+
+_YT_DOMAIN_RE = re.compile(r"youtube\.com|youtu\.be")
+_YT_URL_RE    = re.compile(r"https?://\S*(?:youtube\.com|youtu\.be)\S+")
 
 
 class Orchestrator:
@@ -28,7 +32,7 @@ class Orchestrator:
         return self._modules.get(name)
 
     async def _start_module(self, name: str, mod: Any) -> None:
-        """Inicia um módulo com timeout individual. Nunca lança excepção."""
+        """Inicia um modulo com timeout individual. Nunca lanca excepcao."""
         try:
             await asyncio.wait_for(mod.start(), timeout=_MODULE_START_TIMEOUT)
             log.info("Module started: %s", name)
@@ -46,7 +50,7 @@ class Orchestrator:
                 tasks.append(asyncio.create_task(self._start_module(name, mod)))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        log.info("Orchestrator pronto (%d módulos)", len(self._modules))
+        log.info("Orchestrator pronto (%d modulos)", len(self._modules))
 
     async def process(self, user_input: str) -> str:
         """Pipeline completo com try/except por etapa — sempre devolve PT-PT."""
@@ -54,7 +58,34 @@ class Orchestrator:
         response = _MSG_FALLBACK
 
         try:
-            # 1. Validação de segurança
+            memory = self.get("memory")
+
+            # 0. Detectar URL YouTube → pipeline de video
+            if _YT_DOMAIN_RE.search(user_input):
+                video = self.get("video_analysis")
+                if video:
+                    try:
+                        urls = _YT_URL_RE.findall(user_input)
+                        url = urls[0] if urls else user_input.strip()
+                        log.info("[process] YouTube URL detectado: %s", url)
+                        if memory:
+                            try:
+                                memory.add(role="user", content=user_input)
+                            except Exception:
+                                pass
+                        result = await video.analyze(url)
+                        response = video.format_chat_response(result)
+                        if memory:
+                            try:
+                                memory.add(role="nexus", content=response)
+                            except Exception:
+                                pass
+                        return response
+                    except Exception as exc:
+                        log.error("[process] video_analysis erro: %s", exc, exc_info=True)
+                        return "Ocorreu um erro ao analisar o video. Tenta novamente."
+
+            # 1. Validacao de seguranca
             security = self.get("security")
             if security:
                 try:
@@ -63,8 +94,7 @@ class Orchestrator:
                 except Exception as exc:
                     log.warning("[process] security.validate_input erro: %s", exc)
 
-            # 2. Guardar input na memória
-            memory = self.get("memory")
+            # 2. Guardar input na memoria
             if memory:
                 try:
                     memory.add(role="user", content=user_input)
@@ -82,7 +112,7 @@ class Orchestrator:
             else:
                 response = self._fallback(user_input)
 
-            # 4. Guardar resposta na memória
+            # 4. Guardar resposta na memoria
             if memory:
                 try:
                     memory.add(role="nexus", content=response)
@@ -98,7 +128,7 @@ class Orchestrator:
                     log.warning("[process] tts.speak erro: %s", exc)
 
         except Exception as exc:
-            log.error("[process] erro não capturado: %s", exc, exc_info=True)
+            log.error("[process] erro nao capturado: %s", exc, exc_info=True)
             return _MSG_ERROR
 
         return response if isinstance(response, str) and response.strip() else _MSG_FALLBACK
@@ -107,10 +137,10 @@ class Orchestrator:
         """Fallback local sem LLM — sempre PT-PT."""
         t = text.lower()
         if any(w in t for w in ["trade", "compra", "venda", "ordem", "buy", "sell"]):
-            return "Módulo de trading pronto. Indica símbolo, acção e volume."
-        if any(w in t for w in ["preço", "mercado", "price", "market"]):
+            return "Modulo de trading pronto. Indica simbolo, accao e volume."
+        if any(w in t for w in ["preco", "mercado", "price", "market"]):
             return "A obter dados de mercado. Qual o activo que pretendes?"
-        if any(w in t for w in ["status", "estado", "saúde"]):
+        if any(w in t for w in ["status", "estado", "saude"]):
             return "Todos os sistemas operacionais."
         return _MSG_FALLBACK
 

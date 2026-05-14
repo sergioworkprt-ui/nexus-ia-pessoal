@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nexus_master_fix.sh — Reparação completa do NEXUS no VPS
+# nexus_master_fix.sh — Reparacao completa do NEXUS no VPS
 # Uso: sudo bash /opt/nexus/nexus/scripts/nexus_master_fix.sh
 #
 # ARQUITECTURA:
@@ -7,11 +7,11 @@
 #   Porto 9000 — nexus-dashboard : dashboard React + proxy /api/* e /ws
 set -uo pipefail
 
-# ── Auto-cópia para /tmp: imune a git reset --hard no Step 2 ───────────────────
-# O bash lê scripts em blocos (~8KB). O git reset --hard no Step 2 substitui
-# este ficheiro no disco; o bash lê o bloco seguinte da versão nova e falha.
-# Copiando para /tmp antes de qualquer execução, o git pull nunca afecta a
-# execução em curso. _NEXUS_COPY exportado evita loop infinito.
+# ── Auto-copia para /tmp: imune a git reset --hard no Step 2 ───────────────────
+# O bash le scripts em blocos (~8KB). O git reset --hard no Step 2 substitui
+# este ficheiro no disco; o bash le o bloco seguinte da versao nova e falha.
+# Copiando para /tmp antes de qualquer execucao, o git pull nunca afecta a
+# execucao em curso. _NEXUS_COPY exportado evita loop infinito.
 if [[ -z "${_NEXUS_COPY:-}" ]]; then
     _TMP=$(mktemp /tmp/nexus_fix_XXXXXX.sh)
     cp "$0" "$_TMP"
@@ -76,6 +76,7 @@ fi
 info "[3/10] Actualizar dependencias Python..."
 REQ="$NEXUS_HOME/nexus/requirements.txt"
 if [[ -f "$VENV/bin/pip" ]]; then
+    PYTHON="$VENV/bin/python"
     "$VENV/bin/pip" install --upgrade pip -q 2>&1 | tail -1 | tee -a "$LOG_FILE" || true
     if "$VENV/bin/pip" install -r "$REQ" -q 2>&1 | tee -a "$LOG_FILE"; then
         ok "  pip (venv): dependencias actualizadas"
@@ -83,10 +84,60 @@ if [[ -f "$VENV/bin/pip" ]]; then
         warn "  pip install falhou (alguns pacotes podem estar em falta)"
     fi
 elif command -v pip3 &>/dev/null; then
+    PYTHON=$(command -v python3)
     pip3 install -r "$REQ" -q 2>&1 | tee -a "$LOG_FILE" || true
 else
+    PYTHON=$(command -v python3)
     warn "  pip nao encontrado -- cria o venv: python3 -m venv $VENV"
 fi
+
+# --- STEP 3.5: Ferramentas de analise de video --------------------------------
+info "[3.5] Ferramentas de analise de video (ffmpeg + whisper + dirs)..."
+
+# ffmpeg — necessario para yt-dlp extrair audio para whisper
+if command -v ffmpeg &>/dev/null; then
+    ok "  ffmpeg: ja instalado"
+else
+    info "  A instalar ffmpeg via apt..."
+    if apt-get install -y ffmpeg -q 2>&1 | tail -3 | tee -a "$LOG_FILE"; then
+        ok "  ffmpeg instalado"
+    else
+        warn "  ffmpeg: apt install falhou (opcional — so necessario para whisper)"
+    fi
+fi
+
+# yt-dlp — actualizar para versao mais recente
+if command -v yt-dlp &>/dev/null || [[ -f "$VENV/bin/yt-dlp" ]]; then
+    if [[ -f "$VENV/bin/pip" ]]; then
+        "$VENV/bin/pip" install --upgrade yt-dlp -q 2>&1 | tail -1 | tee -a "$LOG_FILE" || true
+    fi
+    ok "  yt-dlp: actualizado"
+fi
+
+# openai-whisper — transcricao local (fallback quando video sem legendas)
+if "$PYTHON" -c "import whisper" 2>/dev/null; then
+    ok "  openai-whisper: ja instalado"
+else
+    info "  A instalar openai-whisper (pode demorar — inclui torch CPU)..."
+    if [[ -f "$VENV/bin/pip" ]]; then
+        if "$VENV/bin/pip" install openai-whisper -q 2>&1 | tail -3 | tee -a "$LOG_FILE"; then
+            ok "  openai-whisper instalado"
+        else
+            warn "  openai-whisper: falhou (videos sem legendas nao serao transcritos)"
+        fi
+    else
+        warn "  openai-whisper: venv nao encontrado (instala manualmente: pip install openai-whisper)"
+    fi
+fi
+
+# Criar directorios de video com permissoes
+for d in "$NEXUS_HOME/data/video" "$NEXUS_HOME/data/video/transcripts" "$NEXUS_HOME/data/video/metadata"; do
+    mkdir -p "$d" 2>/dev/null && ok "  $d" || true
+done
+_DATA_OWNER=$(stat -c '%U' "$NEXUS_HOME" 2>/dev/null || echo root)
+chown -R "$_DATA_OWNER":"$_DATA_OWNER" "$NEXUS_HOME/data" 2>/dev/null || \
+    chmod -R 777 "$NEXUS_HOME/data" 2>/dev/null || true
+ok "  Permissoes data/video/ OK"
 
 # --- STEP 4: Verificar e corrigir .env ---------------------------------------
 info "[4/10] A verificar .env..."
@@ -171,7 +222,6 @@ for obsolete in nexus-api nexus-ws nexus-backend; do
 done
 ok "  Servicos obsoletos removidos"
 
-# Escrever nexus-core.service sem heredoc para evitar problemas de expansao
 {
     echo '[Unit]'
     echo 'Description=NEXUS AI -- REST API (porta 8000)'
@@ -205,10 +255,8 @@ systemctl enable nexus-core 2>/dev/null || true
 
 # --- STEP 6.5: Teste de importacao Python ------------------------------------
 info "[6.5] Teste de importacao Python..."
-PYTHON="${VENV}/bin/python"
 [[ -f "$PYTHON" ]] || PYTHON=$(command -v python3)
 
-# Escrever script Python para ficheiro temporario -- evita problemas de quoting
 _PY_TEST=$(mktemp /tmp/nexus_import_test_XXXXXX.py)
 cat > "$_PY_TEST" <<'PYEOF'
 import sys, os
@@ -230,7 +278,6 @@ else
     fail "  nexus.api_server: FALHOU"
 fi
 
-# Testar nexus.api.rest.main para diagnostico
 _PY_FULL=$(mktemp /tmp/nexus_full_test_XXXXXX.py)
 cat > "$_PY_FULL" <<'PYEOF'
 import sys, os
@@ -361,3 +408,13 @@ echo "  Dashboard : http://${VPS_IP}:9000"
 echo "  API       : http://${VPS_IP}:9000/api/health"
 echo "  WS        : ws://${VPS_IP}:9000/ws"
 echo "  Logs core : journalctl -u nexus-core -n 50 --no-pager"
+echo ""
+echo "  Teste de video:"
+echo "  curl -s -X POST http://localhost:8000/video/analyze \\"
+echo "    -H 'Content-Type: application/json' \\"
+echo "    -d '{\"url\": \"https://youtube.com/watch?v=dQw4w9WgXcQ\"}' | python3 -m json.tool"
+echo ""
+echo "  Teste via chat:"
+echo "  curl -s -X POST http://localhost:8000/chat \\"
+echo "    -H 'Content-Type: application/json' \\"
+echo "    -d '{\"message\": \"Analisa este video: https://youtube.com/watch?v=dQw4w9WgXcQ\"}' | python3 -m json.tool"
