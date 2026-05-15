@@ -9,8 +9,17 @@
 FROM node:20-alpine AS builder
 WORKDIR /build
 
-COPY nexus/dashboard/frontend/package.json nexus/dashboard/frontend/package-lock.json* ./
-RUN npm ci --prefer-offline
+# Copiar package.json (package-lock.json opcional)
+COPY nexus/dashboard/frontend/package.json ./
+COPY nexus/dashboard/frontend/package-lock.json* ./
+
+# npm ci requer lockfile; npm install funciona sem ele
+# --legacy-peer-deps resolve conflitos de peer deps em React 18
+RUN if [ -f package-lock.json ]; then \
+        npm ci --prefer-offline; \
+    else \
+        npm install --prefer-offline --legacy-peer-deps; \
+    fi
 
 COPY nexus/dashboard/frontend/ .
 

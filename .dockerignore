@@ -1,0 +1,20 @@
+# Ignorar ficheiros desnecessarios para o build Docker
+# Reduz o contexto enviado ao daemon e evita copiar node_modules locais
+
+.git
+.github
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/node_modules
+**/dist
+**/.vite
+**/.env
+**/.env.local
+**/logs
+**/backups
+**/monitor
+*.log
+*.sh
