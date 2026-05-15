@@ -1,47 +1,68 @@
-version: "3.9"
+# NEXUS — Docker Compose
+# Imagens publicadas em GHCR: ghcr.io/sergioworkprt-ui/
+#
+# Para usar imagens do GHCR:
+#   docker compose pull && docker compose up -d
+#
+# Para build local:
+#   docker compose --profile build up --build
+#
+# Variaveis de ambiente: copia .env.example para .env e preenche
 
 services:
-  core:
-    build:
-      context: ../..
-      dockerfile: nexus/docker/Dockerfile.core
+
+  nexus-core:
+    image: ghcr.io/sergioworkprt-ui/nexus-core:latest
     container_name: nexus-core
     restart: unless-stopped
-    env_file: ../../.env
+    env_file:
+      - ../../.env
+    environment:
+      - NEXUS_HOME=/opt/nexus
+      - LOG_DIR=/var/log/nexus
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
     volumes:
-      - nexus_data:/data/nexus
-    networks:
-      - nexus_net
-    depends_on:
-      - api
-
-  api:
-    build:
-      context: ../..
-      dockerfile: nexus/docker/Dockerfile.api
-    container_name: nexus-api
-    restart: unless-stopped
-    env_file: ../../.env
+      - nexus_data:/opt/nexus/data
+      - nexus_logs:/var/log/nexus
     ports:
       - "8000:8000"
     networks:
       - nexus_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
 
-  dashboard:
-    build:
-      context: ../..
-      dockerfile: nexus/docker/Dockerfile.dashboard
+  nexus-dashboard:
+    image: ghcr.io/sergioworkprt-ui/nexus-dashboard:latest
     container_name: nexus-dashboard
     restart: unless-stopped
+    environment:
+      - NEXUS_API_URL=http://nexus-core:8000
+      - NEXUS_WS_URL=ws://nexus-core:8000/ws
+      - DASHBOARD_PORT=9000
     ports:
-      - "3000:80"
+      - "9000:9000"
     networks:
       - nexus_net
     depends_on:
-      - api
+      nexus-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
 
 volumes:
   nexus_data:
+    driver: local
+  nexus_logs:
+    driver: local
 
 networks:
   nexus_net:

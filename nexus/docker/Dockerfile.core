@@ -1,20 +1,36 @@
+# nexus-core — REST API + Orchestrator completo
+# Imagem: ghcr.io/sergioworkprt-ui/nexus-core
 FROM python:3.11-slim
 
 WORKDIR /app
 
+# ffmpeg necessario para yt-dlp extrair audio (pipeline de video)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libportaudio2 libsndfile1 ffmpeg espeak && \
+    gcc g++ ffmpeg curl && \
     rm -rf /var/lib/apt/lists/*
 
 COPY nexus/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Codigo da aplicacao
 COPY nexus/ ./nexus/
-COPY nexus/config/ ./nexus/config/
 
-RUN mkdir -p /data/nexus
+# Directorios de dados
+RUN mkdir -p /opt/nexus/data/video/transcripts \
+             /opt/nexus/data/video/metadata \
+             /var/log/nexus
 
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    NEXUS_HOME=/opt/nexus \
+    LOG_DIR=/var/log/nexus \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000
 
-CMD ["python", "-m", "nexus.main"]
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "nexus.api_server:app", \
+     "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
