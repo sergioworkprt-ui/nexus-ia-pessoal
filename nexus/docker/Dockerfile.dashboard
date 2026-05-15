@@ -1,25 +1,20 @@
-# nexus-dashboard — React frontend + proxy server
+# nexus-dashboard — React frontend + Python proxy server
 # Imagem: ghcr.io/sergioworkprt-ui/nexus-dashboard
 #
-# Stage 1: build React com Vite
-# Stage 2: Python uvicorn servindo nexus.dashboard.server:app
-#   (serve o dist/ do Stage 1 + faz proxy /api/* e /ws para nexus-core)
+# Stage 1: build React com Vite (Node 20)
+# Stage 2: Python 3.11 uvicorn servindo nexus.dashboard.server:app
+#   (serve o dist/ do Stage 1 + proxy /api/* e /ws para nexus-core)
 
-# ── Stage 1: build React ────────────────────────────────────────────────────
+# ── Stage 1: build React ──────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /build
 
-# Copiar package.json (package-lock.json opcional)
+# Copiar apenas package.json (sem lockfile — usa npm install)
 COPY nexus/dashboard/frontend/package.json ./
-COPY nexus/dashboard/frontend/package-lock.json* ./
 
-# npm ci requer lockfile; npm install funciona sem ele
+# npm install: funciona sem package-lock.json
 # --legacy-peer-deps resolve conflitos de peer deps em React 18
-RUN if [ -f package-lock.json ]; then \
-        npm ci --prefer-offline; \
-    else \
-        npm install --prefer-offline --legacy-peer-deps; \
-    fi
+RUN npm install --legacy-peer-deps
 
 COPY nexus/dashboard/frontend/ .
 
@@ -32,7 +27,7 @@ ENV VITE_WS_URL=${VITE_WS_URL}
 
 RUN npm run build
 
-# ── Stage 2: Python dashboard server ────────────────────────────────────────
+# ── Stage 2: Python dashboard server ─────────────────────────────────────────
 FROM python:3.11-slim
 WORKDIR /app
 
@@ -41,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 
 RUN pip install --no-cache-dir \
     fastapi>=0.111 \
-    uvicorn[standard]>=0.29 \
+    "uvicorn[standard]>=0.29" \
     httpx>=0.27 \
     websockets>=12.0
 
