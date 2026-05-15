@@ -1,0 +1,36 @@
+# Dockerfile partilhado para todos os microserviços Python do NEXUS
+# (nexus-core, nexus-profit-engine, nexus-web-intelligence,
+#  nexus-auto-evolution, nexus-multi-ia, nexus-runtime)
+#
+# Build: docker build -f Dockerfile.services -t nexus-services .
+
+FROM python:3.11-slim
+
+# Dependências de sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/nexus
+
+# Instala dependências Python
+COPY requirements-services.txt ./
+RUN pip install --no-cache-dir -r requirements-services.txt
+
+# Copia o código-fonte completo
+COPY . .
+
+# Cria directórios de runtime
+RUN mkdir -p /opt/nexus/data /opt/nexus/logs /opt/nexus/data/video
+
+# Variáveis de ambiente por omissão
+ENV DATA_DIR=/opt/nexus/data \
+    LOG_DIR=/opt/nexus/logs \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# O CMD é sobreposto por cada serviço no docker-compose
+CMD ["uvicorn", "core.server:app", "--host", "0.0.0.0", "--port", "8001"]
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8001}/health || exit 1

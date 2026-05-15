@@ -1,0 +1,269 @@
+# NEXUS — Docker Compose completo
+# Orquestra todos os serviços do sistema NEXUS no VPS
+#
+# Uso:
+#   docker compose up -d
+#   docker compose logs -f nexus-core
+#
+# Portas:
+#   9000 — nexus-dashboard  (Flask, interface principal)
+#   8001 — nexus-core       (NexusCore FastAPI)
+#   8002 — nexus-profit     (ProfitEngine FastAPI)
+#   8003 — nexus-web-intel  (WebIntelligence FastAPI)
+#   8004 — nexus-evolution  (AutoEvolution FastAPI)
+#   8005 — nexus-multi-ia   (MultiIA FastAPI)
+#   8006 — nexus-runtime    (NexusRuntime FastAPI)
+
+services:
+
+  # ── Dashboard principal (Flask) ─────────────────────────────────────────
+  nexus-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: nexus-dashboard
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - nexus-data:/data
+      - nexus-logs:/opt/nexus/logs
+    environment:
+      - DATA_DIR=/data
+      - SECRET_KEY=${SECRET_KEY:-nexus-secret-change-me}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - GMAIL_ADDRESS=${GMAIL_ADDRESS:-}
+      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-}
+      - XTB_ACCOUNT_ID=${XTB_ACCOUNT_ID:-}
+      - XTB_PASSWORD=${XTB_PASSWORD:-}
+      - XTB_MODE=${XTB_MODE:-demo}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - nexus-net
+
+  # ── NEXUS Core ─────────────────────────────────────────────────────────
+  nexus-core:
+    build:
+      context: .
+      dockerfile: Dockerfile.services
+    container_name: nexus-core
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    command: ["uvicorn", "core.server:app", "--host", "0.0.0.0", "--port", "8001", "--log-level", "info"]
+    volumes:
+      - nexus-data:/opt/nexus/data
+      - nexus-logs:/opt/nexus/logs
+    environment:
+      - PORT=8001
+      - DATA_DIR=/opt/nexus/data
+      - LOG_DIR=/opt/nexus/logs
+      - HEARTBEAT_INTERVAL=30
+      - TASK_WORKERS=4
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - nexus-net
+
+  # ── Profit Engine ──────────────────────────────────────────────────────
+  nexus-profit-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.services
+    container_name: nexus-profit-engine
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    command: ["uvicorn", "profit_engine.server:app", "--host", "0.0.0.0", "--port", "8002", "--log-level", "info"]
+    volumes:
+      - nexus-data:/opt/nexus/data
+      - nexus-logs:/opt/nexus/logs
+    environment:
+      - PORT=8002
+      - DATA_DIR=/opt/nexus/data
+      - LOG_DIR=/opt/nexus/logs
+      - INITIAL_CAPITAL=${INITIAL_CAPITAL:-10000}
+    depends_on:
+      nexus-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - nexus-net
+
+  # ── Web Intelligence ───────────────────────────────────────────────────
+  nexus-web-intelligence:
+    build:
+      context: .
+      dockerfile: Dockerfile.services
+    container_name: nexus-web-intelligence
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    command: ["uvicorn", "web_intelligence.server:app", "--host", "0.0.0.0", "--port", "8003", "--log-level", "info"]
+    volumes:
+      - nexus-data:/opt/nexus/data
+      - nexus-logs:/opt/nexus/logs
+    environment:
+      - PORT=8003
+      - DATA_DIR=/opt/nexus/data
+      - LOG_DIR=/opt/nexus/logs
+      - FETCH_TIMEOUT=15
+    depends_on:
+      nexus-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - nexus-net
+
+  # ── Auto-Evolution ─────────────────────────────────────────────────────
+  nexus-auto-evolution:
+    build:
+      context: .
+      dockerfile: Dockerfile.services
+    container_name: nexus-auto-evolution
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    command: ["uvicorn", "auto_evolution.server:app", "--host", "0.0.0.0", "--port", "8004", "--log-level", "info"]
+    volumes:
+      - nexus-data:/opt/nexus/data
+      - nexus-logs:/opt/nexus/logs
+      - ./:/opt/nexus/workspace:ro
+    environment:
+      - PORT=8004
+      - DATA_DIR=/opt/nexus/data
+      - LOG_DIR=/opt/nexus/logs
+      - WORKSPACE=/opt/nexus
+    depends_on:
+      nexus-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - nexus-net
+
+  # ── Multi-IA ───────────────────────────────────────────────────────────
+  nexus-multi-ia:
+    build:
+      context: .
+      dockerfile: Dockerfile.services
+    container_name: nexus-multi-ia
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    command: ["uvicorn", "multi_ia.server:app", "--host", "0.0.0.0", "--port", "8005", "--log-level", "info"]
+    volumes:
+      - nexus-data:/opt/nexus/data
+      - nexus-logs:/opt/nexus/logs
+    environment:
+      - PORT=8005
+      - DATA_DIR=/opt/nexus/data
+      - LOG_DIR=/opt/nexus/logs
+      - MAX_AGENTS=5
+    depends_on:
+      nexus-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - nexus-net
+
+  # ── Runtime ────────────────────────────────────────────────────────────
+  nexus-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.services
+    container_name: nexus-runtime
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    command: ["uvicorn", "nexus_runtime.server:app", "--host", "0.0.0.0", "--port", "8006", "--log-level", "info"]
+    volumes:
+      - nexus-data:/opt/nexus/data
+      - nexus-logs:/opt/nexus/logs
+    environment:
+      - PORT=8006
+      - DATA_DIR=/opt/nexus/data
+      - LOG_DIR=/opt/nexus/logs
+    depends_on:
+      nexus-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - nexus-net
+
+  # ── IBKR Gateway ───────────────────────────────────────────────────────
+  nexus-ibkr:
+    image: ghcr.io/sergioworkprt-ui/nexus-ibkr:latest
+    container_name: nexus-ibkr
+    restart: unless-stopped
+    ports:
+      - "8007:8000"
+    volumes:
+      - nexus-data:/opt/nexus/data
+    environment:
+      - IB_HOST=${IB_HOST:-127.0.0.1}
+      - IB_PORT=${IB_PORT:-7497}
+      - IB_CLIENT_ID=${IB_CLIENT_ID:-1}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - nexus-net
+
+volumes:
+  nexus-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/nexus/data
+  nexus-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/nexus/logs
+
+networks:
+  nexus-net:
+    driver: bridge

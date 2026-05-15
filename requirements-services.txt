@@ -1,0 +1,11 @@
+# Dependências para os microserviços FastAPI do NEXUS
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+httpx==0.27.2
+pydantic==2.9.2
+
+# Dependências do app.py (Flask/dashboard)
+flask==3.0.3
+gunicorn==22.0.0
+youtube-transcript-api==0.6.2
+websocket-client==1.8.0
